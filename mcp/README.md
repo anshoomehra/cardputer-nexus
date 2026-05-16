@@ -9,18 +9,28 @@ ask a multiple-choice question, demand physical confirmation for
 destructive operations, dictate via the mic, and display ambient
 status — all without the user needing to refocus to their laptop.
 
-## Status — iteration 2 (real BLE; notify + ask end-to-end)
+## Status — iteration 3 (confirm gesture; the 2FA-for-AI moment)
 
 The host-side bridge speaks Bluetooth Low Energy via `bleak` to the
-`cardputer_mcp.py` device app. Two tools work end-to-end:
+`cardputer_mcp.py` device app. Three tools work end-to-end:
 
-| Tool                                | iter 2                           | iter 3                     | iter 4                      |
-| ----------------------------------- | -------------------------------- | -------------------------- | --------------------------- |
-| `notify(title, body, urgency)`      | ✅ visual banner + speaker chirp | rate-limit, per-agent tags | —                           |
-| `ask(question, choices, timeout_s)` | ✅ blocks on QWERTY input        | DND awareness              | —                           |
-| `confirm(title, danger)`            | —                                | hold-Y-3s physical gesture | —                           |
-| `show(text, channel)`               | —                                | —                          | ambient line on LCD         |
-| `dictate(prompt, max_seconds)`      | —                                | —                          | mic → Worker/Whisper → text |
+| Tool                                | iter 2                           | iter 3                             | iter 4                      |
+| ----------------------------------- | -------------------------------- | ---------------------------------- | --------------------------- |
+| `notify(title, body, urgency)`      | ✅ visual banner + speaker chirp | rate-limit, per-agent tags         | —                           |
+| `ask(question, choices, timeout_s)` | ✅ blocks on QWERTY input        | DND awareness                      | —                           |
+| `confirm(title, timeout_s)`         | —                                | ✅ HOLD Y for 3 s physical gesture | —                           |
+| `show(text, channel)`               | —                                | —                                  | ambient line on LCD         |
+| `dictate(prompt, max_seconds)`      | —                                | —                                  | mic → Worker/Whisper → text |
+
+`confirm` is the differentiator. It demands a physical, sustained
+gesture from the user before returning success — a prompt injection
+or runaway agent loop cannot synthesize "hold a key for 3 seconds"
+through any tool-output content. Use it for destructive operations
+(deploys, force pushes, DROP TABLE, etc.). The hold timer resets the
+instant the user releases Y; the gesture cannot be interrupted and
+resumed by accident, and the device pre-empts any pending `ask` when
+confirm arrives so a malicious tool result can't swap the screen
+out from under the user.
 
 ## Architecture
 
@@ -175,14 +185,49 @@ patterns in detail because the same hard-won lessons apply:
 See `buddy/references/ble_on_micropython.md` for the full list of
 MicroPython BLE gotchas these patterns paper over.
 
+## Known limitations
+
+A short list of rough edges we're aware of in the iter-3 release.
+None blocks normal use of `notify` or `ask`; `confirm` is usable
+but its gesture is less polished than the brand promised.
+
+- **`confirm` gesture requires rapid Y presses, not a continuous
+  hold.** The screen says "HOLD Y for 3 seconds" but on UIFlow 2.0
+  the MatrixKeyboard driver does not generate auto-repeat events
+  while a key is held — `get_key()` returns a single event per
+  physical press. To advance the hold timer the user has to tap Y
+  rapidly (keep the inter-tap gap under ~300 ms). The threshold and
+  the "release detected — try again" status are honest about what
+  actually happened, but the headline label still says "HOLD"; a
+  future iter will either probe for a held-key API and switch the
+  detection over, or relabel the screen to "TAP Y rapidly".
+- **Device-side resolution acks for blocking tools sometimes don't
+  reach the host.** When `ask` or `confirm` hits its own
+  device-supplied `timeout_s`, the device's tick-fired `timed_out`
+  ack is occasionally dropped before the host sees it; the host's
+  RPC then fails with `rpc timeout` (timeout*s + 10s) instead of
+  the cleaner device-driven `timeout`. Tool result for the caller
+  is the same shape ("unavailable" / error), just with a less
+  specific error message. Suspect: race between IRQ-context
+  `_on_state(disconnected)` and main-loop `tick()` mutating
+  `pending*\*` state. Tracking.
+- **macOS Bluetooth permission prompt on first scan.** Approve it
+  once per laptop; if Claude Code runs in a sandboxed terminal
+  multiplexer you may need to grant Bluetooth to the terminal app
+  itself under System Settings → Privacy & Security → Bluetooth.
+- **Buddy and cardputer_mcp can't run simultaneously on the device.**
+  They register different BLE services, but UIFlow's launcher
+  hands the BLE controller to whichever app is active — and
+  `machine.reset()` on app exit clears the stack anyway. Pick one
+  from the launcher menu.
+
 ## Roadmap
 
 - [x] iter 1: scaffold with stubbed transport
 - [x] iter 2: real BLE transport; `notify` and `ask` end-to-end
-- [ ] iter 3: `confirm` (hold-Y-3s); per-agent tags + rate limit;
-      DND switch
-- [ ] iter 4: `show` (ambient line on LCD); `dictate` (mic →
-      Worker/Whisper → text)
+- [x] iter 3: `confirm` with hold-Y-3s physical gesture
+- [ ] iter 4: per-agent tags + rate limit; DND switch; `show`
+      (ambient line on LCD); `dictate` (mic → Worker/Whisper → text)
 - [ ] iter 5: Worker-bridged HTTPS MCP for cloud agents
 - [ ] iter 6: inverse direction — programmable launcher buttons
       that fire Managed Agents tasks

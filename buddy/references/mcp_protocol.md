@@ -54,7 +54,7 @@ in-flight requests.
 | --------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------------------------------------------------------------ |
 | `notify`  | `{"cmd":"notify","id":"...","title":"...","body":"...","urgency":"info"                         | "warn"                                                                                                                         | "crit","agent":"..."}` | Display the notification, beep per urgency, ack immediately. |
 | `ask`     | `{"cmd":"ask","id":"...","question":"...","choices":["a","b",...],"timeout_s":N,"agent":"..."}` | Show question + choices, wait for keypress or timeout. Send a `pending` ack on receipt and a resolution ack later (see below). |
-| `confirm` | `{"cmd":"confirm","id":"...","title":"...","danger":true,"agent":"..."}`                        | Show a danger banner, require hold-Y-for-3 s. Send `pending` ack on receipt + resolution ack later. _(iter 3)_                 |
+| `confirm` | `{"cmd":"confirm","id":"...","title":"...","danger":true,"timeout_s":N,"agent":"..."}`          | Show a danger banner, require hold-Y-for-3 s. Send `pending` ack on receipt + resolution ack later.                            |
 | `show`    | `{"cmd":"show","id":"...","text":"...","channel":"agent-tag"}`                                  | Update one line of the ambient status area. Ack immediately. _(iter 4)_                                                        |
 | `cancel`  | `{"cmd":"cancel","id":"...","target_id":"..."}`                                                 | Cancel a pending `ask` / `confirm`. Ack with cancellation state.                                                               |
 | `ping`    | `{"cmd":"ping","id":"..."}`                                                                     | Round-trip liveness check.                                                                                                     |
@@ -69,19 +69,20 @@ The `agent` field carries a short tag (`"claude-code"`, `"cursor"`,
 
 ## Outbound (device → host)
 
-| shape                                                                      | when                                                                                                       |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `{"event":"hello","version":"0.1.0","name":"...","caps":["notify","ask"]}` | Once, immediately after the BLE central subscribes to TX. `caps` lists tools this firmware supports.       |
-| `{"event":"heartbeat","bat":{...},"rssi":...}`                             | Every ~10 s while connected, mirroring Buddy's cadence.                                                    |
-| `{"ack":"<cmd>","id":"...","ok":true}`                                     | Generic success ack — for `notify`, `show`, `ping`, `cancel`.                                              |
-| `{"ack":"<cmd>","id":"...","ok":false,"err":"..."}`                        | Generic failure ack. `err` is a short stable string.                                                       |
-| `{"ack":"ask","id":"...","pending":true}`                                  | Immediate ack for `ask` / `confirm` indicating the device received the request and is awaiting user input. |
-| `{"ack":"ask","id":"...","ok":true,"choice":"..."}`                        | Resolution: user picked a choice.                                                                          |
-| `{"ack":"ask","id":"...","ok":false,"timed_out":true}`                     | Resolution: `timeout_s` elapsed.                                                                           |
-| `{"ack":"ask","id":"...","ok":false,"dnd":true}`                           | Resolution: device was in do-not-disturb mode.                                                             |
-| `{"ack":"ask","id":"...","ok":false,"cancelled":true}`                     | Resolution: host sent `cancel` for this id, or user pressed ESC.                                           |
-| `{"ack":"confirm","id":"...","ok":true,"confirmed":true,"hold_ms":N}`      | Resolution: user held Y for ≥ 3 s. `hold_ms` is the measured hold duration. _(iter 3)_                     |
-| `{"ack":"confirm","id":"...","ok":false,"cancelled":true}`                 | Resolution: user pressed N or ESC. _(iter 3)_                                                              |
+| shape                                                                                | when                                                                                                                                                |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{"event":"hello","version":"0.2.0","name":"...","caps":["notify","ask","confirm"]}` | Once, ~1.5 s after the BLE central subscribes to TX (delay is to let the central settle its CCCD write). `caps` lists tools this firmware supports. |
+| `{"event":"heartbeat","bat":{...},"rssi":...}`                                       | Every ~10 s while connected, mirroring Buddy's cadence.                                                                                             |
+| `{"ack":"<cmd>","id":"...","ok":true}`                                               | Generic success ack — for `notify`, `show`, `ping`, `cancel`.                                                                                       |
+| `{"ack":"<cmd>","id":"...","ok":false,"err":"..."}`                                  | Generic failure ack. `err` is a short stable string.                                                                                                |
+| `{"ack":"ask","id":"...","pending":true}`                                            | Immediate ack for `ask` / `confirm` indicating the device received the request and is awaiting user input.                                          |
+| `{"ack":"ask","id":"...","ok":true,"choice":"..."}`                                  | Resolution: user picked a choice.                                                                                                                   |
+| `{"ack":"ask","id":"...","ok":false,"timed_out":true}`                               | Resolution: `timeout_s` elapsed.                                                                                                                    |
+| `{"ack":"ask","id":"...","ok":false,"dnd":true}`                                     | Resolution: device was in do-not-disturb mode.                                                                                                      |
+| `{"ack":"ask","id":"...","ok":false,"cancelled":true}`                               | Resolution: host sent `cancel` for this id, or user pressed ESC.                                                                                    |
+| `{"ack":"confirm","id":"...","ok":true,"confirmed":true,"hold_ms":N}`                | Resolution: user held Y for ≥ 3 s. `hold_ms` is the measured hold duration.                                                                         |
+| `{"ack":"confirm","id":"...","ok":false,"cancelled":true}`                           | Resolution: user pressed N or ESC.                                                                                                                  |
+| `{"ack":"confirm","id":"...","ok":false,"timed_out":true}`                           | Resolution: `timeout_s` elapsed before the user could complete the hold.                                                                            |
 
 ### hello event body
 

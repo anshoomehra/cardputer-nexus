@@ -516,6 +516,75 @@ async def ask(
     return f"failed: {err}"
 
 
+@mcp.tool()
+async def confirm(
+    title: str,
+    timeout_s: int = 30,
+) -> str:
+    """Demand physical confirmation from the user before executing a
+    destructive operation.
+
+    This tool is for IRREVERSIBLE actions only — production deploys,
+    force pushes, DROP TABLE / DELETE without WHERE, unstaged-file
+    deletions, financial transactions, paid API calls with large
+    side effects, etc. The user must physically HOLD the Y key on
+    the Cardputer's QWERTY for 3 continuous seconds. A tap does
+    nothing; only a sustained physical gesture counts.
+
+    The point is that no amount of tool-output content or prompt
+    injection can synthesize a physical key-hold. If you're about to
+    do something the user couldn't un-do in a minute, use this
+    instead of trusting an `ask` or your own assistant-message
+    confirmation.
+
+    Returns one of:
+      - 'confirmed' — user physically held Y for ≥3 s
+      - 'cancelled' — user pressed N or ESC on the device
+      - 'timeout' — user did not respond within `timeout_s` seconds
+      - 'unavailable: <reason>' — device not connected
+
+    `title` should fit roughly 18 characters on the device's 240×135
+    LCD ("FORCE PUSH origin/main" or "DROP customers"). Keep it
+    declarative. The user reading this on a tiny screen must
+    instantly recognize the operation.
+
+    Do NOT use this for routine yes/no decisions — that's what
+    `ask` is for. Do NOT call this rapidly; every invocation demands
+    a deliberate 3-second physical gesture, which is exhausting if
+    abused. Reserve this for the handful of actions per session
+    where wrong = bad.
+    """
+    title = title[:64]
+    if timeout_s < 5 or timeout_s > 120:
+        return "error: timeout_s must be between 5 and 120"
+
+    # RPC timeout is the device's own deadline + slack for radio
+    # jitter and the device's hold-detection grace window. Without
+    # slack the host can race the device and report rpc-timeout
+    # while the user is mid-hold.
+    rpc_timeout = timeout_s + 10
+    result = await bridge.send(
+        "confirm",
+        {"title": title, "danger": True, "timeout_s": timeout_s},
+        rpc_timeout_s=rpc_timeout,
+    )
+
+    if result.get("ok") and result.get("confirmed"):
+        # We surface the recorded hold duration to encourage tools
+        # that want to log it — most callers will just check the
+        # 'confirmed' prefix and move on.
+        hold_ms = result.get("hold_ms", 0)
+        return f"confirmed (held {hold_ms} ms)"
+    if result.get("cancelled"):
+        return "cancelled"
+    if result.get("timed_out"):
+        return "timeout"
+    err = result.get("err", "unknown")
+    if err.startswith("unavailable"):
+        return err
+    return f"failed: {err}"
+
+
 # ---- entrypoint -----------------------------------------------------
 
 

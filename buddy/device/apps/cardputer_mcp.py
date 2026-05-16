@@ -59,9 +59,27 @@ _RX_CHAR = (RX_UUID, _FLAG_WRITE | _FLAG_WRITE_NR)
 _TX_CHAR = (TX_UUID, _FLAG_READ | _FLAG_NOTIFY)
 _SVC = (SERVICE_UUID, (_RX_CHAR, _TX_CHAR))
 
-_FW_VERSION = "0.1.0"
-_CAPS = ["notify", "ask"]
+_FW_VERSION = "0.2.0"
+_CAPS = ["notify", "ask", "confirm"]
 _MTU = 20  # default ATT MTU minus framing; chunk every TX write at this
+
+# How long the user must hold Y for `confirm` to succeed. Picked high
+# enough that a casual key-press can't accidentally trigger a
+# destructive action — the value any real "are you sure?" UX would
+# want is "long enough that no reflex can produce it." 3 s is the
+# sweet spot: short enough that the user doesn't lose patience,
+# long enough that no prompt injection's worth of "tap Y now" advice
+# could time it precisely.
+_CONFIRM_HOLD_MS = 3000
+
+# Maximum gap between consecutive Y events that still counts as
+# "still held." MatrixKeyboard surfaces autorepeat events (or in
+# the worst case, the user hammers Y manually) — either way, if Y
+# stops landing for longer than this, treat it as a release and
+# reset the hold timer. 300 ms covers worst-case autorepeat cadence
+# and rapid finger-tap gaps without making accidental release
+# undetectable.
+_CONFIRM_KEY_GAP_MS = 300
 
 
 # ---- UI constants --------------------------------------------------
@@ -416,7 +434,7 @@ class App:
     """
 
     def __init__(self):
-        self.state = "idle"  # "idle" | "notify" | "ask"
+        self.state = "idle"  # "idle" | "notify" | "ask" | "confirm"
         self.ble_connected = False
 
         # Notify state.
@@ -425,6 +443,15 @@ class App:
 
         # Ask state.
         self.pending_ask = None  # {"id", "question", "choices", "deadline"}
+
+        # Confirm state. The hold timer is tracked by two timestamps:
+        #   _y_held_since_ms — ticks_ms() when we first saw Y in the
+        #                      current hold run; None when not held.
+        #   _last_y_seen_ms  — ticks_ms() of the most recent Y event.
+        #                      Used to detect release via gap > threshold.
+        self.pending_confirm = None  # {"id", "title", "danger", "deadline"}
+        self._y_held_since_ms = None
+        self._last_y_seen_ms = None
 
         # Side-effect queue (set from IRQ, drained in main loop).
         self._dirty = True
@@ -436,12 +463,18 @@ class App:
 
     def _on_state(self, state):
         self.ble_connected = state == "connected"
-        if state == "disconnected" and self.pending_ask:
-            # Peer is gone; we can't send an ack, just clear the
-            # pending ask so the screen reverts and a future
-            # connection doesn't see a stale request.
-            self.pending_ask = None
-            self.state = "idle"
+        if state == "disconnected":
+            # Peer is gone; we can't send acks. Clear any blocking
+            # operation so the screen reverts and a future connection
+            # doesn't see stale state.
+            if self.pending_ask:
+                self.pending_ask = None
+                self.state = "idle"
+            if self.pending_confirm:
+                self.pending_confirm = None
+                self._y_held_since_ms = None
+                self._last_y_seen_ms = None
+                self.state = "idle"
         # Force a redraw to reflect status in the idle banner.
         if self.state == "idle":
             self._dirty = True
@@ -453,6 +486,8 @@ class App:
             self._cmd_notify(msg, mid)
         elif cmd == "ask":
             self._cmd_ask(msg, mid)
+        elif cmd == "confirm":
+            self._cmd_confirm(msg, mid)
         elif cmd == "ping":
             self.ble.send({"ack": "ping", "id": mid, "ok": True})
         elif cmd == "cancel":
@@ -469,11 +504,13 @@ class App:
             "urgency": msg.get("urgency", "info"),
         }
         self.notify_expires_at = time.ticks_add(time.ticks_ms(), _NOTIFY_LINGER_MS)
-        # If we were mid-ask, the notify pre-empts the screen but the
-        # ask itself is still live; once notify clears we revert to it.
-        # For simplicity in iter 2: notify only renders if we're not in
-        # ask state. Iter 3 can add a "stacked" display.
-        if self.state != "ask":
+        # Notify never pre-empts a blocking modal — the user is in the
+        # middle of answering an ask or holding a confirm and shouldn't
+        # have the screen yanked out from under them. We still ack and
+        # chirp so the host knows the message was delivered; the visible
+        # banner is just suppressed until the modal clears. A future
+        # iter can stack notifications as a corner-chip overlay.
+        if self.state not in ("ask", "confirm"):
             self.state = "notify"
             self._dirty = True
         self._pending_chirp = self.notify_data["urgency"]
@@ -484,6 +521,18 @@ class App:
         if not isinstance(choices_in, list) or len(choices_in) < 2 or len(choices_in) > 4:
             self.ble.send(
                 {"ack": "ask", "id": mid, "ok": False, "err": "need 2–4 choices"}
+            )
+            return
+
+        # Refuse to pre-empt a pending confirm. The whole point of
+        # confirm is that the user is committing to a destructive
+        # action; an arriving ask could be the agent trying to wriggle
+        # out of it or — much worse, in the prompt-injection threat
+        # model — a malicious tool result trying to swap the screen
+        # for something innocuous. Return busy and make the host retry.
+        if self.pending_confirm:
+            self.ble.send(
+                {"ack": "ask", "id": mid, "ok": False, "err": "confirm pending; retry"}
             )
             return
 
@@ -515,34 +564,153 @@ class App:
         self.ble.send({"ack": "ask", "id": mid, "pending": True})
 
     def _cmd_cancel(self, msg, mid):
+        """Cancel a pending blocking operation (ask or confirm).
+
+        We match `target_id` against whichever blocking modal is
+        currently pending. If neither matches, report a clear error —
+        cancels for already-resolved requests aren't catastrophic but
+        the host should know its bookkeeping is off.
+        """
         target = msg.get("target_id")
         if self.pending_ask and self.pending_ask["id"] == target:
             self.ble.send(
-                {
-                    "ack": "ask",
-                    "id": target,
-                    "ok": False,
-                    "cancelled": True,
-                }
+                {"ack": "ask", "id": target, "ok": False, "cancelled": True}
             )
             self.pending_ask = None
             self.state = "idle"
             self._dirty = True
             self.ble.send({"ack": "cancel", "id": mid, "ok": True})
-        else:
+            return
+        if self.pending_confirm and self.pending_confirm["id"] == target:
+            self.ble.send(
+                {"ack": "confirm", "id": target, "ok": False, "cancelled": True}
+            )
+            self.pending_confirm = None
+            self._y_held_since_ms = None
+            self._last_y_seen_ms = None
+            self.state = "idle"
+            self._dirty = True
+            self.ble.send({"ack": "cancel", "id": mid, "ok": True})
+            return
+        self.ble.send(
+            {"ack": "cancel", "id": mid, "ok": False, "err": "no matching pending"}
+        )
+
+    def _cmd_confirm(self, msg, mid):
+        """Show a destructive-confirmation prompt requiring a hold-Y gesture.
+
+        Pre-empts both pending ask and pending confirm — the new request
+        gets the modal regardless of what was there. A user holding Y on
+        the prior confirm doesn't get to confirm the new one for free,
+        because we reset the hold timer when entering the new state.
+        """
+        title = str(msg.get("title", ""))[:64]
+        timeout_s = max(5, min(120, int(msg.get("timeout_s", 30))))
+        danger = bool(msg.get("danger", True))
+
+        if self.pending_ask:
             self.ble.send(
                 {
-                    "ack": "cancel",
-                    "id": mid,
+                    "ack": "ask",
+                    "id": self.pending_ask["id"],
                     "ok": False,
-                    "err": "no matching pending",
+                    "cancelled": True,
+                    "reason": "confirm preempted",
                 }
             )
+            self.pending_ask = None
+
+        if self.pending_confirm:
+            self.ble.send(
+                {
+                    "ack": "confirm",
+                    "id": self.pending_confirm["id"],
+                    "ok": False,
+                    "cancelled": True,
+                    "reason": "newer confirm preempted",
+                }
+            )
+
+        self.pending_confirm = {
+            "id": mid,
+            "title": title,
+            "danger": danger,
+            "deadline": time.ticks_add(time.ticks_ms(), timeout_s * 1000),
+        }
+        # Start with no hold in progress. Even if the user happened to
+        # be holding Y from the prior screen, they restart from zero —
+        # the new confirm is a fresh consent, not an inherited one.
+        self._y_held_since_ms = None
+        self._last_y_seen_ms = None
+        self.state = "confirm"
+        self._dirty = True
+        # `crit` chirp regardless of `danger` flag — the audible cue
+        # is what makes "wait, what's about to happen?" register if
+        # the user isn't looking at the device. A non-danger confirm
+        # is unusual enough that we leave it loud.
+        self._pending_chirp = "crit"
+        self.ble.send({"ack": "confirm", "id": mid, "pending": True})
 
     # --- keyboard (main-loop context) ------------------------------
 
     def handle_keypress(self, k):
         """Return True if the app should exit (back to launcher)."""
+        if self.state == "confirm" and self.pending_confirm:
+            if isinstance(k, int):
+                # Y / y advances the hold. The actual "did we hit
+                # threshold?" check happens here too so confirmation
+                # fires the moment the user's hold qualifies.
+                if k in (ord("y"), ord("Y")):
+                    now = time.ticks_ms()
+                    if self._y_held_since_ms is None:
+                        self._y_held_since_ms = now
+                    self._last_y_seen_ms = now
+                    held_ms = time.ticks_diff(now, self._y_held_since_ms)
+                    if held_ms >= _CONFIRM_HOLD_MS:
+                        self.ble.send(
+                            {
+                                "ack": "confirm",
+                                "id": self.pending_confirm["id"],
+                                "ok": True,
+                                "confirmed": True,
+                                "hold_ms": held_ms,
+                            }
+                        )
+                        self.pending_confirm = None
+                        self._y_held_since_ms = None
+                        self._last_y_seen_ms = None
+                        self.state = "idle"
+                        self._dirty = True
+                    else:
+                        # Progress update — main-loop redraw handles it.
+                        self._dirty = True
+                    return False
+                # N / n / ESC cancel the confirm without exiting the app.
+                # We accept any of three keys because the right choice
+                # depends on muscle memory: power users tend toward ESC,
+                # phone-style flows expect N, and "tap Y or N" is a
+                # universally familiar binary prompt.
+                if k in (ord("n"), ord("N"), 0x1B):
+                    self.ble.send(
+                        {
+                            "ack": "confirm",
+                            "id": self.pending_confirm["id"],
+                            "ok": False,
+                            "cancelled": True,
+                        }
+                    )
+                    self.pending_confirm = None
+                    self._y_held_since_ms = None
+                    self._last_y_seen_ms = None
+                    self.state = "idle"
+                    self._dirty = True
+                    return False
+                # Q exits the app entirely. The finally-block in run()
+                # sends a cancellation ack so the host doesn't hang.
+                if _is_q(k):
+                    return True
+            return False
+
         if self.state == "ask" and self.pending_ask:
             # 1–4 picks the corresponding choice.
             if isinstance(k, int) and ord("1") <= k <= ord("4"):
@@ -616,6 +784,40 @@ class App:
                 self.pending_ask = None
                 self.state = "idle"
                 self._dirty = True
+        elif self.state == "confirm" and self.pending_confirm:
+            # Detect Y release: if no Y event has landed within
+            # _CONFIRM_KEY_GAP_MS, the user has let go and the hold
+            # resets to zero. This is the gate that makes "hold Y for
+            # 3 s" actually require a sustained press — without it the
+            # first Y forever-counts as held.
+            if self._y_held_since_ms is not None and self._last_y_seen_ms is not None:
+                if time.ticks_diff(now, self._last_y_seen_ms) > _CONFIRM_KEY_GAP_MS:
+                    self._y_held_since_ms = None
+                    self._last_y_seen_ms = None
+                    self._dirty = True
+            # Host-supplied timeout. Wins even if the user happens to
+            # be holding Y — the host already gave up waiting, so a
+            # late confirmation would resolve a dead RPC.
+            if time.ticks_diff(self.pending_confirm["deadline"], now) <= 0:
+                self.ble.send(
+                    {
+                        "ack": "confirm",
+                        "id": self.pending_confirm["id"],
+                        "ok": False,
+                        "timed_out": True,
+                    }
+                )
+                self.pending_confirm = None
+                self._y_held_since_ms = None
+                self._last_y_seen_ms = None
+                self.state = "idle"
+                self._dirty = True
+            # Smooth-progress redraw while held — without this the bar
+            # only updates on key events, which would be jerky between
+            # autorepeat ticks. ~25 fps full redraw is well within the
+            # LCD driver's headroom.
+            elif self._y_held_since_ms is not None:
+                self._dirty = True
 
         if self._dirty:
             self.redraw()
@@ -624,7 +826,9 @@ class App:
     # --- rendering -------------------------------------------------
 
     def redraw(self):
-        if self.state == "ask":
+        if self.state == "confirm":
+            self._draw_confirm()
+        elif self.state == "ask":
             self._draw_ask()
         elif self.state == "notify":
             self._draw_notify()
@@ -737,12 +941,95 @@ class App:
         hint = "1-4 pick - ESC cancel"
         _LCD.drawString(hint, (_W - _LCD.textWidth(hint)) // 2, _H - 14)
 
+    def _draw_confirm(self):
+        if not self.pending_confirm:
+            return
+
+        _LCD.fillScreen(_BLACK)
+
+        # Red header band — danger signal. We use the same chrome
+        # rhythm as the other states (header + hairline + body + hint
+        # strip) so a user can't be fooled into thinking this is an
+        # ordinary prompt, but the color shift makes the urgency
+        # readable at a glance.
+        _LCD.fillRect(0, 0, _W, 20, _RED)
+        _LCD.fillRect(0, 20, _W, 1, _ORANGE)
+        _LCD.setTextSize(1)
+        _LCD.setTextColor(_CREAM, _RED)
+        _LCD.drawString("DANGER  CONFIRM", 6, 5)
+
+        # Title — size 2 for weight; truncated to fit one line. We
+        # deliberately do NOT wrap the title: if the action is too
+        # complex to describe in 18 chars, the host is over-using
+        # confirm and should be using ask instead.
+        _LCD.setTextSize(2)
+        _LCD.setTextColor(_RED, _BLACK)
+        title = self.pending_confirm["title"][:18]
+        _LCD.drawString(title, (_W - _LCD.textWidth(title)) // 2, 28)
+
+        # Instruction line. Plain, unambiguous, telegraphs the
+        # gesture without any "press to continue" ambiguity.
+        _LCD.setTextSize(1)
+        _LCD.setTextColor(_CREAM, _BLACK)
+        instr = "HOLD Y for 3 seconds"
+        _LCD.drawString(instr, (_W - _LCD.textWidth(instr)) // 2, 60)
+
+        # Progress bar. Empty outline always visible; fills red as the
+        # hold accumulates. Geometry: 200 px wide, 10 px tall, centered.
+        bar_w = 200
+        bar_h = 10
+        bar_x = (_W - bar_w) // 2
+        bar_y = 78
+        _LCD.drawRect(bar_x, bar_y, bar_w, bar_h, _CREAM)
+        if self._y_held_since_ms is not None:
+            held_ms = time.ticks_diff(time.ticks_ms(), self._y_held_since_ms)
+            # Clamp visually so we don't overshoot the inner area while
+            # the threshold-check / state-transition is in flight.
+            progress = held_ms / _CONFIRM_HOLD_MS
+            if progress > 1.0:
+                progress = 1.0
+            elif progress < 0.0:
+                progress = 0.0
+            fill_w = int((bar_w - 2) * progress)
+            if fill_w > 0:
+                _LCD.fillRect(bar_x + 1, bar_y + 1, fill_w, bar_h - 2, _RED)
+
+        # Status text under the bar — tells the user what's happening
+        # right now (a release is otherwise silent and you'd wonder
+        # why the bar reset).
+        _LCD.setTextSize(1)
+        if self._y_held_since_ms is not None:
+            held_ms = time.ticks_diff(time.ticks_ms(), self._y_held_since_ms)
+            remaining = max(0, _CONFIRM_HOLD_MS - held_ms)
+            secs = remaining / 1000.0
+            status = "holding... {:.1f}s left".format(secs)
+            _LCD.setTextColor(_RED, _BLACK)
+        else:
+            status = "release detected - try again"
+            _LCD.setTextColor(_GRAY_MID, _BLACK)
+        # Suppress the "release detected" string on first paint when
+        # the user hasn't tried yet. _y_held_since_ms is None at start
+        # too, so we differentiate via _last_y_seen_ms — if we've never
+        # seen Y, show a quiet hint instead of a misleading "release"
+        # message.
+        if self._y_held_since_ms is None and self._last_y_seen_ms is None:
+            status = "press and hold Y"
+            _LCD.setTextColor(_GRAY_MID, _BLACK)
+        _LCD.drawString(status, (_W - _LCD.textWidth(status)) // 2, 96)
+
+        # Hint strip — same shape as other states.
+        _LCD.fillRect(0, _H - 18, _W, 18, _DARK)
+        _LCD.setTextColor(_GRAY_MID, _DARK)
+        hint = "HOLD Y - N/ESC cancel"
+        _LCD.drawString(hint, (_W - _LCD.textWidth(hint)) // 2, _H - 14)
+
     def teardown(self):
         """Best-effort cleanup before the launcher returns.
 
-        Sends a cancellation ack for any pending ask so the host's
-        RPC doesn't time out (the host gets a clean 'cancelled'
-        result instead). Then tears down the BLE peripheral.
+        Sends a cancellation ack for any pending blocking operation
+        (ask or confirm) so the host's RPC doesn't time out — it gets
+        a clean 'cancelled' result instead. Then tears down the BLE
+        peripheral.
         """
         if self.pending_ask and self.ble.connected:
             try:
@@ -750,6 +1037,19 @@ class App:
                     {
                         "ack": "ask",
                         "id": self.pending_ask["id"],
+                        "ok": False,
+                        "cancelled": True,
+                        "reason": "device-exit",
+                    }
+                )
+            except Exception as e:
+                print("cardputer_mcp: teardown ack failed:", e)
+        if self.pending_confirm and self.ble.connected:
+            try:
+                self.ble.send(
+                    {
+                        "ack": "confirm",
+                        "id": self.pending_confirm["id"],
                         "ok": False,
                         "cancelled": True,
                         "reason": "device-exit",

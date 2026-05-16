@@ -72,6 +72,30 @@ async def main() -> int:
         print(f"  FAIL: unexpected ack shape: {result}\n")
         return 1
 
+    await asyncio.sleep(1)
+
+    # ---- confirm ---------------------------------------------------
+    print("→ confirm: 'DROP customers' (30s timeout)")
+    print("  >>> HOLD Y on the Cardputer for 3 seconds to confirm <<<")
+    print("  >>> or press N/ESC to cancel <<<")
+    result = await bridge.send(
+        "confirm",
+        {"title": "DROP customers", "danger": True, "timeout_s": 30},
+        rpc_timeout_s=40,
+    )
+    print(f"  ← {result}")
+
+    if result.get("ok") and result.get("confirmed"):
+        hold_ms = result.get("hold_ms", 0)
+        print(f"  OK — user confirmed (held {hold_ms} ms)\n")
+    elif result.get("cancelled"):
+        print("  CANCELLED — user backed out (also a valid outcome)\n")
+    elif result.get("timed_out"):
+        print("  TIMEOUT — no hold completed in 30 s\n")
+    else:
+        print(f"  FAIL: unexpected ack shape: {result}\n")
+        return 1
+
     return 0
 
 
