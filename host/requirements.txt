@@ -1,0 +1,22 @@
+# Cardputer Nexus - Host Requirements
+# Install with: pip install -r requirements.txt
+
+# BLE communication
+bleak>=0.21.0
+
+# HTTP client for Claude API
+httpx>=0.25.0
+
+# Local Whisper STT (optional, but recommended)
+openai-whisper>=20231117
+
+# Audio processing
+soundfile>=0.12.0
+numpy>=1.24.0
+
+# For MCP bridge
+websockets>=12.0
+
+# Development
+pytest>=7.4.0
+pytest-asyncio>=0.21.0

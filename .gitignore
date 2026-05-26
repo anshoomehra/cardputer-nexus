@@ -11,3 +11,30 @@ venv/
 buddy/device/apps/config.py
 worker/.dev.vars
 worker/.wrangler/
+
+# Host config with secrets
+host/config.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+*.bin
+*.elf
+.pio/

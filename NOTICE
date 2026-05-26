@@ -1,14 +1,52 @@
-m5stack
-Copyright 2026 MAS Event + Design, LLC
+Cardputer Nexus
+Copyright 2024-2026 Anshoo Mehra (@anshoomehra)
 
-Licensed under the Apache License, Version 2.0 (see LICENSE).
+This product includes software developed by:
 
-This product bundles one third-party Python package in
-`onboard/scripts/vendor/`: pyserial 3.5, BSD-3-Clause licensed. See
-LICENSE-THIRD-PARTY.md for details.
+================================================================================
+cardputer-claude-os
+Copyright 2024-2026 Dakshay Mehta (@dakshaymehta)
+https://github.com/dakshaymehta/cardputer-claude-os
+Licensed under Apache License 2.0
 
-esptool (required at runtime by the flash stage) is GPLv2+ and is
-intentionally NOT bundled with this repository. It is declared as a
-pip dependency in requirements.txt and the skill's preflight
-auto-installs it on first run if missing. This keeps the repository
-itself cleanly Apache-2.0-compatible.
+The core voice AI, Claude Pager, and MCP server functionality is derived from
+this project. We are grateful for the foundational work that made Nexus possible.
+================================================================================
+
+================================================================================
+build-with-claude
+Copyright 2024-2026 Contributors
+https://github.com/moremas/build-with-claude
+Licensed under Apache License 2.0
+
+The m5-onboard Claude Code skill for device flashing and app installation is
+derived from this project.
+================================================================================
+
+================================================================================
+claude-desktop-buddy-cardputer (Planned Integration)
+Copyright 2024-2026 Y88 Huang (@y88huang)
+https://github.com/y88huang/claude-desktop-buddy-cardputer
+Licensed under MIT License
+
+The planned Tamagotchi-style pet companion system, including ASCII species
+artwork, mood state machine, and emotional engagement mechanics, will be
+adapted from this project.
+================================================================================
+
+================================================================================
+claude-desktop-buddy
+Copyright 2024-2026 Anthropic
+https://github.com/anthropics/claude-desktop-buddy
+
+The BLE protocol specification and Hardware Buddy integration pattern is based
+on the official Anthropic reference implementation.
+================================================================================
+
+================================================================================
+M5Stack / M5Cardputer
+https://m5stack.com
+https://github.com/m5stack/M5Cardputer
+
+Hardware platform and libraries for the M5Stack Cardputer.
+================================================================================
