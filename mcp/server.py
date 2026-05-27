@@ -47,12 +47,12 @@ from mcp.server.fastmcp import FastMCP
 # in all three places — there's no central manifest because grepping
 # `a5cd` is faster than maintaining a config file.
 
-SERVICE_UUID = "a5cd0001-c0de-4abe-9c1a-4d5e6f7a8b90"
-RX_UUID = "a5cd0002-c0de-4abe-9c1a-4d5e6f7a8b90"  # host → device
-TX_UUID = "a5cd0003-c0de-4abe-9c1a-4d5e6f7a8b90"  # device → host
+SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # host → device
+TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # device → host
 
-# Device advertises as CardputerMCP_<6 hex>; we filter on the prefix.
-NAME_PREFIX = "CardputerMCP_"
+# Device advertises as CardputerMCP_<6 hex> or ClaudeNexus_<6 hex>; we filter on prefixes.
+NAME_PREFIXES = ["ClaudeNexus_", "CardputerMCP_"]
 
 SCAN_TIMEOUT_S = 5.0
 HELLO_TIMEOUT_S = 5.0
@@ -181,7 +181,7 @@ class Bridge:
         _save_cached_address(addr, name or "")
 
     async def _scan(self) -> tuple[Optional[str], Optional[str]]:
-        _log(f"scanning for {NAME_PREFIX}* ({SCAN_TIMEOUT_S} s)")
+        _log(f"scanning for {NAME_PREFIXES} ({SCAN_TIMEOUT_S} s)")
         try:
             # `return_adv=True` makes discover() return a dict
             # {addr: (device, AdvertisementData)} so we can read RSSI
@@ -204,7 +204,7 @@ class Bridge:
             # rejects rich payloads — see the cascade fallback in
             # `_advertise` on the device side.
             adv_uuids = [str(u).lower() for u in (adv.service_uuids or [])] if adv else []
-            if name.startswith(NAME_PREFIX) or SERVICE_UUID in adv_uuids:
+            if any(name.startswith(p) for p in NAME_PREFIXES) or SERVICE_UUID in adv_uuids:
                 rssi = adv.rssi if (adv and adv.rssi is not None) else -127
                 candidates.append((rssi, addr, name or "Cardputer"))
 

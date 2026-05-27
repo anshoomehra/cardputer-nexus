@@ -1,277 +1,200 @@
-<p align="center">
-  <img src="docs/assets/nexus-banner.png" alt="Cardputer Nexus" width="600">
-</p>
+# Claude Nexus
 
-<h1 align="center">Cardputer Nexus</h1>
+**A pocket companion for Claude Code** — two-way communication between your AI coding assistant and an M5Stack Cardputer you can carry in your pocket.
 
-<p align="center">
-  <strong>The nexus between human intent and AI action</strong>
-</p>
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         ARCHITECTURE                            │
+│                                                                 │
+│  ┌──────────────┐         BLE          ┌──────────────────┐    │
+│  │  Cardputer   │◄────────────────────►│   Host Proxy     │    │
+│  │              │    Nordic UART       │   (debug_demo)   │    │
+│  │  Claude      │      Service         │                  │    │
+│  │  Nexus App   │                      │  HTTP :8765      │    │
+│  │              │                      │    ▲             │    │
+│  │  - 4 Pets    │                      │    │             │    │
+│  │  - Sounds    │                      │    ▼             │    │
+│  │  - Keyboard  │                      │  File Watcher    │    │
+│  └──────────────┘                      └────────┬─────────┘    │
+│        ▲                                        │              │
+│        │ Notifications                          │ Commands     │
+│        │ Token Stats                            │              │
+│        │ Waiting Alerts                         ▼              │
+│        │                               ┌──────────────────┐    │
+│        └───────────────────────────────│   Claude Code    │    │
+│                                        │                  │    │
+│                                        │  Your AI Coding  │    │
+│                                        │  Assistant       │    │
+│                                        └──────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-<p align="center">
-  Voice control, hardware confirmations, and MCP tools for Claude on M5Stack Cardputer
-</p>
+## What It Does
 
-<p align="center">
-  <a href="#features">Features</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#local-voice-setup">Local Voice</a> •
-  <a href="#mcp-tools">MCP Tools</a> •
-  <a href="#enterprise">Enterprise</a> •
-  <a href="#credits">Credits</a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/platform-M5Stack%20Cardputer-blue?style=flat-square" alt="Platform">
-  <img src="https://img.shields.io/badge/claude-Opus%204.6-blueviolet?style=flat-square" alt="Claude">
-  <img src="https://img.shields.io/badge/protocol-MCP-green?style=flat-square" alt="MCP">
-  <img src="https://img.shields.io/badge/license-Apache%202.0-orange?style=flat-square" alt="License">
-</p>
-
----
-
-## Why Nexus?
-
-> **"A prompt injection cannot press your buttons."**
-
-Cardputer Nexus transforms your M5Stack Cardputer into the **physical control layer** for Claude AI agents. When AI can execute code, deploy to production, or delete data—you need more than a software "Allow" button.
-
-| Attack Vector | Software Dialog | Nexus Hardware |
-|---------------|-----------------|----------------|
-| Prompt injection tricks approval | ❌ Vulnerable | ✅ Cannot press physical button |
-| UI spoofing | ❌ Vulnerable | ✅ Separate device |
-| Fatigue clicking | ❌ Common | ✅ Requires sustained 2s press |
-| Audit trail | ❌ Modifiable | ✅ Device-attested |
-
----
+| Direction | Feature | How |
+|-----------|---------|-----|
+| **Claude Code → Device** | Notifications | `curl localhost:8765/notify` |
+| **Claude Code → Device** | Token usage stats | `curl localhost:8765/stats` |
+| **Claude Code → Device** | "Waiting for input" alerts | `curl localhost:8765/waiting` |
+| **Device → Claude Code** | Text commands | Press T, type, press Enter |
 
 ## Features
 
-### 🎤 Push to Claude (Voice AI)
+### Pet Companions
+Four ASCII pets with emotions — press **P** to cycle:
+- **Cat** — Classic companion
+- **Dog** — Tail wags while waiting!
+- **Blob** — Friendly amorphous friend
+- **Bunny** — Cute and alert
 
-Hold SPACE to talk, release to send. Supports **two modes**:
+Each pet has moods: idle, happy, alert, sleep
 
-**Cloud Mode (Original):** Cardputer → Cloudflare Worker → Whisper → Claude Haiku 4.5
+### Sound Alerts
+Different tones for different urgencies:
+- **Info** — Single chirp
+- **Warning** — Two ascending tones
+- **Critical** — Three rapid alternating tones
 
-**Local Mode (New):** Cardputer → Your Mac → Local Whisper → **Your Enterprise Claude (localhost:9999)**
+### Token Usage Display
+See your session's token consumption in the top bar (updates live)
 
-```
-┌─────────────────┐     BLE      ┌──────────────────────┐
-│   Cardputer     │ ──────────►  │  Your MacBook        │
-│   [SPACE held]  │              │  - Local Whisper     │
-│   "Deploy to    │  ◄────────── │  - Enterprise Claude │
-│    staging"     │   Response   │  - Opus 4.6          │
-└─────────────────┘              └──────────────────────┘
-```
-
-### 🔐 Hardware MCP Server
-
-Your Cardputer becomes an MCP server that Claude Code, Claude Desktop, Cursor, or any MCP-speaking agent can call:
-
-| Tool | Function | Security Level |
-|------|----------|----------------|
-| `notify(title, body, urgency)` | Flash banner + sound | Informational |
-| `ask(question, choices, timeout)` | Multiple choice via keys 1-4 | Decision |
-| `confirm(title, timeout)` | **Sustained 2s keypress required** | ⚠️ Critical |
-
-**The `confirm()` Security Model:**
-
-```
-┌────────────────────────────┐
-│  ⚠️  DANGER  ⚠️             │
-│                            │
-│  DROP TABLE users?         │
-│                            │
-│  ████████░░ HOLD [Y] 2s    │
-│  or press [N] to cancel    │
-└────────────────────────────┘
-```
-
-A prompt injection **cannot physically hold down a key** for 2 seconds. Only you can.
-
-### 📟 Claude Pager (Managed Agents)
-
-Monitor your Managed Agents sessions from your pocket:
-
-| Screen | Function |
-|--------|----------|
-| **Compose** | Fire off tasks as Managed Agent sessions |
-| **Inbox** | Live status: `bash: pytest…`, `wrote auth_test.py` |
-| **Detail** | Reply, interrupt, or approve pending tool calls |
-
-### 🐾 Pet Companions (Coming Soon)
-
-Tamagotchi-style creatures that react to your Claude usage — 20 species, 7 moods. *Inspired by [y88huang/claude-desktop-buddy-cardputer](https://github.com/y88huang/claude-desktop-buddy-cardputer).*
+### Idle Alerts
+After 5 minutes of no activity, your pet falls asleep and you get a gentle reminder beep
 
 ---
 
 ## Quick Start
 
 ### Prerequisites
-
-- M5Stack Cardputer ADV (with mic/speaker for voice)
+- M5Stack Cardputer ADV (with speaker)
 - Python 3.10+
 - Claude Code
+- macOS (tested), Linux (should work)
 
-### Flash the Device
+### 1. Clone & Setup
 
 ```bash
-# Clone this repo
-git clone https://github.com/anshoomehra/cardputer-nexus.git
+git clone https://github.com/your-username/cardputer-nexus.git
 cd cardputer-nexus
 
-# Plug in Cardputer via USB-C
-# Open Claude Code, point to this folder
-# Type:
-m5-onboard go
+# Install host dependencies
+cd host
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install aiohttp  # For HTTP API
 ```
 
-**When prompted for download mode:**
-1. Hold **G0** button (on back)
-2. While holding, press **Reset**
-3. Release Reset first, then G0
-4. Screen goes dark = ready
+### 2. Flash Device
 
-### Connect to Claude Desktop
-
-1. On Cardputer: Select **Claude Buddy** from menu
-2. In Claude Desktop: **Help → Troubleshooting → Enable Developer Mode**
-3. **Developer → Hardware Buddy → Connect**
-4. Select your device
-
-### Set Up MCP Server
+Connect Cardputer via USB-C:
 
 ```bash
-# On Cardputer: Select cardputer_mcp from menu
+# Install mpremote if needed
+pip install mpremote
 
-# On Mac:
-cd mcp
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# Register with Claude Code
-claude mcp add cardputer "$(pwd)/.venv/bin/python" "$(pwd)/server.py"
+# Copy the app to device
+python -m mpremote connect /dev/tty.usbmodem101 cp buddy/device/apps/claude_nexus.py :/flash/apps/claude_nexus.py
 ```
 
-Now Claude can call `notify()`, `ask()`, and `confirm()`!
-
----
-
-## Local Voice Setup (No Cloud)
-
-Replace Cloudflare Worker with **local processing** using your enterprise Claude:
-
-### 1. Install Dependencies
+### 3. Configure (Optional - For Voice Features)
 
 ```bash
 cd host
-pip install -r requirements.txt
-
-# Install Whisper locally
-pip install openai-whisper
-```
-
-### 2. Configure
-
-```bash
 cp config.example.py config.py
 ```
 
 Edit `config.py`:
 ```python
-# Your enterprise Claude endpoint
-CLAUDE_ENDPOINT = "http://localhost:9999"
-CLAUDE_MODEL = "claude-opus-4-6"
+# Option A: Use your own Anthropic API key
+CLAUDE_API_KEY = "sk-ant-..."
+CLAUDE_ENDPOINT = "https://api.anthropic.com"
+CLAUDE_MODEL = "claude-sonnet-4-20250514"
 
-# Local Whisper
-STT_BACKEND = "whisper_local"
-WHISPER_MODEL = "base"  # tiny|base|small|medium|large
+# Option B: Use a local/enterprise endpoint (no API key needed)
+CLAUDE_ENDPOINT = "http://localhost:9999"
+CLAUDE_MODEL = "claude-sonnet-4-20250514"
+CLAUDE_API_KEY = ""  # Leave empty for local endpoints
 ```
 
-### 3. Run
+### 4. Run
+
+**Terminal 1 — Host Proxy:**
+```bash
+cd host
+source .venv/bin/activate
+python debug_demo.py
+```
+
+**Terminal 2 — Device:**
+1. Reset Cardputer
+2. Select **Claude Nexus** from app menu
+3. Wait for "LINKED" status
+
+### 5. Test It!
 
 ```bash
-python local_proxy.py
+# Send a notification
+curl -X POST http://localhost:8765/notify \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Hello!","body":"From Claude Code","urgency":"info"}'
+
+# Send token stats
+curl -X POST http://localhost:8765/stats \
+  -H "Content-Type: application/json" \
+  -d '{"tokens":50000}'
+
+# Alert that Claude is waiting
+curl -X POST http://localhost:8765/waiting \
+  -H "Content-Type: application/json" \
+  -d '{"body":"What should I do next?"}'
 ```
-
-Voice now flows: **Cardputer → BLE → Mac (Whisper) → localhost:9999 (Opus 4.6) → Cardputer**
-
-✅ No Cloudflare  
-✅ No API costs (using your enterprise Claude)  
-✅ All data stays local  
 
 ---
 
-## MCP Tools Reference
+## Device Controls
 
-### `notify`
-
-```json
-{
-  "tool": "cardputer.notify",
-  "input": {
-    "title": "Build Complete",
-    "body": "47 tests passed",
-    "urgency": "low"
-  }
-}
-```
-
-| Urgency | Color | Sound |
-|---------|-------|-------|
-| `low` | Green | Single chirp |
-| `medium` | Yellow | Double beep |
-| `high` | Red | Triple alarm |
-
-### `ask`
-
-```json
-{
-  "tool": "cardputer.ask",
-  "input": {
-    "question": "Which environment?",
-    "choices": ["dev", "staging", "prod"],
-    "timeout_s": 30
-  }
-}
-```
-
-Returns: `{"choice": "staging", "index": 1}`
-
-### `confirm`
-
-```json
-{
-  "tool": "cardputer.confirm",
-  "input": {
-    "title": "DELETE production database?",
-    "timeout_s": 60
-  }
-}
-```
-
-Requires **holding Y key for 2 seconds**. Returns: `{"confirmed": true|false}`
+| Key | Action |
+|-----|--------|
+| **T** or **Space** | Open text input |
+| **P** | Cycle pet (Cat → Dog → Blob → Bunny) |
+| **Q** | Quit app |
+| **Enter** | Send message (in text mode) |
+| **Esc** | Cancel text input |
+| **Space** | Dismiss notification |
 
 ---
 
-## Enterprise
+## HTTP API Reference
 
-See [docs/enterprise.md](docs/enterprise.md) for:
+### POST /notify
+Send a notification to the device.
 
-- Fleet deployment (batch flashing hundreds of devices)
-- Central configuration management
-- Audit logging and compliance
-- SOC 2 / HIPAA / PCI considerations
+```json
+{
+  "title": "Build Complete",
+  "body": "All tests passed",
+  "urgency": "info"  // "info" | "warn" | "crit"
+}
+```
 
-### Why Nexus for Enterprise?
+### POST /stats
+Update token usage display.
 
-| Challenge | Solution |
-|-----------|----------|
-| Prompt injection | `confirm()` requires physical gesture |
-| Audit trail | Device-attested approval logs |
-| Data sovereignty | Local Whisper + your Claude endpoint |
-| Fleet scale | Same firmware, central config, OTA updates |
-| Cost control | Built-in daily spawn caps |
+```json
+{
+  "tokens": 125000
+}
+```
+
+### POST /waiting
+Alert that Claude Code is waiting for input.
+
+```json
+{
+  "body": "Waiting for your instructions..."
+}
+```
 
 ---
 
@@ -279,60 +202,63 @@ See [docs/enterprise.md](docs/enterprise.md) for:
 
 ```
 cardputer-nexus/
-├── buddy/                    # Device firmware (MicroPython)
-│   ├── device/apps/          # Apps: claude_buddy, push_to_claude, pager, mcp
-│   └── scripts/              # Install scripts
-├── host/                     # NEW: Local proxy (no Cloudflare)
-│   ├── config.example.py     # Configuration template
-│   ├── local_proxy.py        # Whisper + Claude bridge
+├── buddy/device/apps/
+│   └── claude_nexus.py      # Main device app (MicroPython)
+├── host/
+│   ├── debug_demo.py        # BLE proxy with HTTP API
+│   ├── config.example.py    # Configuration template
 │   └── requirements.txt
-├── mcp/                      # MCP server (BLE bridge)
-│   └── server.py
-├── worker/                   # Cloudflare Worker (optional)
-├── mac/                      # macOS artifact sync
-├── .claude/skills/           # Claude Code skills
-└── docs/
-    └── enterprise.md         # Enterprise deployment guide
+├── mcp/
+│   └── server.py            # MCP server (alternative to proxy)
+└── README.md
 ```
 
 ---
 
-## Credits & Attribution
+## Troubleshooting
 
-### Forked From
+### Device not connecting
+- Make sure USB is disconnected (BLE only allows one connection)
+- Restart the proxy
+- Reset the device and relaunch the app
 
-**[dakshaymehta/cardputer-claude-os](https://github.com/dakshaymehta/cardputer-claude-os)**
+### No sound
+- Original Cardputer has no speaker — you need **Cardputer ADV**
+- Sound plays but is quiet? We set volume to max (255)
 
-This project is a fork of the excellent `cardputer-claude-os` by [@dakshaymehta](https://github.com/dakshaymehta). The core voice AI, Claude Pager, and MCP server functionality originates from this project. We are deeply grateful for this foundational work.
-
-### Upstream Origin
-
-**[moremas/build-with-claude](https://github.com/moremas/build-with-claude)**
-
-The original `m5-onboard` skill and device launcher come from this project.
-
-### Pet System (Planned Integration)
-
-**[y88huang/claude-desktop-buddy-cardputer](https://github.com/y88huang/claude-desktop-buddy-cardputer)**
-
-The planned Tamagotchi-style pet companion system will be adapted from [@y88huang](https://github.com/y88huang)'s fantastic Cardputer port. The 20 ASCII species, 7 mood states, and emotional engagement mechanics originate from this project.
-
-### Protocol Reference
-
-**[anthropics/claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy)**
-
-The BLE protocol and Hardware Buddy integration is based on the official Anthropic reference implementation.
+### Keyboard not responding
+- There's an 800ms delay after M5.begin() before keyboard works
+- This is handled automatically in the app
 
 ---
 
-## What's New in This Fork
+## Integration with Claude Code
 
-| Addition | Description |
-|----------|-------------|
-| **Local Voice Proxy** | Whisper + enterprise Claude on localhost (no Cloudflare needed) |
-| **Enterprise Docs** | Fleet deployment, compliance, audit logging |
-| **Nexus Branding** | New README, tagline, security messaging |
-| **Pet Integration Plan** | Framework for y88huang's companion system |
+To receive commands from your Cardputer in Claude Code, set up a file watcher:
+
+```bash
+# The proxy writes commands to this file
+cat ~/.cardputer_voice_cmd
+
+# Watch for changes (in your Claude Code session)
+# Claude Code can monitor this file and respond to commands
+```
+
+---
+
+## Credits
+
+- **Pet system inspired by**: [y88huang/claude-desktop-buddy-cardputer](https://github.com/y88huang/claude-desktop-buddy-cardputer)
+- **Original voice AI**: [dakshaymehta/cardputer-claude-os](https://github.com/dakshaymehta/cardputer-claude-os)
+- **m5-onboard skill**: [moremas/build-with-claude](https://github.com/moremas/build-with-claude)
+
+---
+
+## Important Notes
+
+- **This works with Claude Code (CLI)**, not Claude Desktop
+- Voice features require the Cardputer ADV variant (with mic/speaker)
+- Text input mode works on all Cardputer variants
 
 ---
 
@@ -343,9 +269,5 @@ Apache 2.0 — See [LICENSE](LICENSE)
 ---
 
 <p align="center">
-  <strong>Your buttons. Your rules.</strong>
-</p>
-
-<p align="center">
-  <sub>Made with ❤️ for the Claude community</sub>
+  <strong>Your pocket AI companion</strong>
 </p>
