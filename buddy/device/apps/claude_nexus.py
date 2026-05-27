@@ -437,6 +437,12 @@ def run():
             if _inbox:
                 msg = _inbox.pop(0)
                 msg_type = msg.get("type", "")
+                # If sleeping, silently ignore non-critical notifications
+                if _idle_alert_sent and msg_type in ("waiting", "stats"):
+                    if msg_type == "stats":
+                        _total_tokens = msg.get("tokens", _total_tokens)
+                    continue
+
                 _last_activity = now
                 _idle_alert_sent = False
 
@@ -453,7 +459,6 @@ def run():
                         last_redraw = now
                     continue
                 elif msg_type == "waiting":
-                    # Claude is waiting for user input
                     _draw_notify("Claude Waiting", msg.get("body", "Ready for your input"), "warn")
                     state = "notify"
                     last_redraw = now
