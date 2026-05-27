@@ -376,45 +376,56 @@ def _send(msg):
 def _record_device_mic():
     """Record from Cardputer's built-in mic and send audio over BLE."""
     try:
+        gc.collect()
         mic = M5.Mic
         mic.begin()
 
-        # Record 4 seconds at 16kHz mono 16-bit
-        sample_rate = 16000
-        num_samples = sample_rate * 4
+        # Record 2 seconds at 8kHz mono 16-bit = 32KB buffer
+        sample_rate = 8000
+        num_samples = sample_rate * 2
         buf = bytearray(num_samples * 2)
 
         mic.record(buf, sample_rate, True)
         mic.end()
 
-        # Build WAV header
         data_size = len(buf)
-        wav = bytearray(44 + data_size)
-        wav[0:4] = b'RIFF'
-        wav[4:8] = (36 + data_size).to_bytes(4, 'little')
-        wav[8:12] = b'WAVE'
-        wav[12:16] = b'fmt '
-        wav[16:20] = (16).to_bytes(4, 'little')
-        wav[20:22] = (1).to_bytes(2, 'little')  # PCM
-        wav[22:24] = (1).to_bytes(2, 'little')  # mono
-        wav[24:28] = sample_rate.to_bytes(4, 'little')
-        wav[28:32] = (sample_rate * 2).to_bytes(4, 'little')
-        wav[32:34] = (2).to_bytes(2, 'little')
-        wav[34:36] = (16).to_bytes(2, 'little')
-        wav[36:40] = b'data'
-        wav[40:44] = data_size.to_bytes(4, 'little')
-        wav[44:] = buf
+        total_size = 44 + data_size
 
-        # Send over BLE in chunks
-        _send({"type": "audio_start", "mode": "claude_code", "size": len(wav)})
-        chunk_size = 200
-        for i in range(0, len(wav), chunk_size):
+        # Send audio_start
+        _send({"type": "audio_start", "mode": "claude_code", "size": total_size})
+        time.sleep_ms(50)
+
+        # Build and send 44-byte WAV header
+        hdr = bytearray(44)
+        hdr[0:4] = b'RIFF'
+        hdr[4:8] = (36 + data_size).to_bytes(4, 'little')
+        hdr[8:12] = b'WAVE'
+        hdr[12:16] = b'fmt '
+        hdr[16:20] = (16).to_bytes(4, 'little')
+        hdr[20:22] = (1).to_bytes(2, 'little')
+        hdr[22:24] = (1).to_bytes(2, 'little')
+        hdr[24:28] = sample_rate.to_bytes(4, 'little')
+        hdr[28:32] = (sample_rate * 2).to_bytes(4, 'little')
+        hdr[32:34] = (2).to_bytes(2, 'little')
+        hdr[34:36] = (16).to_bytes(2, 'little')
+        hdr[36:40] = b'data'
+        hdr[40:44] = data_size.to_bytes(4, 'little')
+        _ble.gatts_notify(_conn_handle, _tx_handle, hdr)
+        time.sleep_ms(30)
+
+        # Stream audio buffer directly in chunks (no copy)
+        chunk = 200
+        for i in range(0, data_size, chunk):
             if _connected and _conn_handle and _tx_handle:
-                _ble.gatts_notify(_conn_handle, _tx_handle, wav[i:i + chunk_size])
-                time.sleep_ms(30)
+                _ble.gatts_notify(_conn_handle, _tx_handle, buf[i:i + chunk])
+                time.sleep_ms(25)
+
+        time.sleep_ms(50)
         _send({"type": "audio_end"})
+        gc.collect()
         return True
     except:
+        gc.collect()
         return False
 
 def _get_text(kb):
