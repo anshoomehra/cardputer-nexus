@@ -35,7 +35,8 @@
 |-----------|---------|-----|
 | **Claude Code → Device** | Notifications | `curl localhost:8765/notify` |
 | **Claude Code → Device** | Token usage stats | `curl localhost:8765/stats` |
-| **Claude Code → Device** | "Waiting for input" alerts | `curl localhost:8765/waiting` |
+| **Claude Code → Device** | "Waiting for input" alerts | Auto via hooks |
+| **Claude Code → Device** | Interactive prompts | `curl localhost:8765/ask` |
 | **Device → Claude Code** | Text commands | Press T, type, press Enter |
 
 ## Features
@@ -58,8 +59,14 @@ Different tones for different urgencies:
 ### Token Usage Display
 See your session's token consumption in the top bar (updates live)
 
+### Interactive Prompts
+Claude Code can ask questions with numbered choices — press 1-4 to respond
+
 ### Idle Alerts
 After 5 minutes of no activity, your pet falls asleep and you get a gentle reminder beep
+
+### Automatic "Waiting" Notifications
+Claude Code hooks automatically notify your device when Claude is waiting for your input — no manual setup needed after initial install
 
 ---
 
@@ -117,7 +124,22 @@ CLAUDE_MODEL = "claude-sonnet-4-20250514"
 CLAUDE_API_KEY = ""  # Leave empty for local endpoints
 ```
 
-### 4. Run
+### 4. Install Claude Code Hooks
+
+This enables automatic notifications when Claude Code is waiting for you:
+
+```bash
+bash setup_hooks.sh
+```
+
+This adds a `Stop` hook to `~/.claude/settings.json` that sends a notification to your Cardputer whenever Claude Code finishes responding and is waiting for your input. Includes a 2-minute cooldown to avoid spam during active conversation.
+
+**What the hook does:**
+- Claude Code finishes a response → your Cardputer beeps and shows "Waiting for input"
+- Works across all Claude Code sessions and projects
+- Max once every 2 minutes
+
+### 5. Run
 
 **Terminal 1 — Host Proxy:**
 ```bash
@@ -129,9 +151,10 @@ python debug_demo.py
 **Terminal 2 — Device:**
 1. Reset Cardputer
 2. Select **Claude Nexus** from app menu
-3. Wait for "LINKED" status (disconnect USB first - BLE only allows one connection)
+3. Disconnect USB (BLE only allows one connection)
+4. Wait for "LINKED" status
 
-### 5. Test It!
+### 6. Test It!
 
 ```bash
 # Send a notification
@@ -139,15 +162,15 @@ curl -X POST http://localhost:8765/notify \
   -H "Content-Type: application/json" \
   -d '{"title":"Hello!","body":"From Claude Code","urgency":"info"}'
 
+# Send an interactive prompt
+curl -X POST http://localhost:8765/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Run npm test?","choices":["Yes","No","Skip"]}'
+
 # Send token stats
 curl -X POST http://localhost:8765/stats \
   -H "Content-Type: application/json" \
   -d '{"tokens":50000}'
-
-# Alert that Claude is waiting
-curl -X POST http://localhost:8765/waiting \
-  -H "Content-Type: application/json" \
-  -d '{"body":"What should I do next?"}'
 ```
 
 ---
@@ -162,6 +185,7 @@ curl -X POST http://localhost:8765/waiting \
 | **Enter** | Send message (in text mode) |
 | **Esc** | Cancel text input |
 | **Space** | Dismiss notification |
+| **1-4** | Select choice (in ask mode) |
 
 ---
 
@@ -178,6 +202,17 @@ Send a notification to the device.
 }
 ```
 Urgency levels: `"info"` | `"warn"` | `"crit"`
+
+### POST /ask
+Send an interactive prompt with choices. User presses 1-4 to respond.
+
+```json
+{
+  "question": "Deploy to which env?",
+  "choices": ["dev", "staging", "prod"]
+}
+```
+Response sent back via BLE: `{"type": "ask_response", "choice": 0, "value": "dev"}`
 
 ### POST /stats
 Update token usage display.
@@ -275,6 +310,50 @@ Once registered, Claude Code can call these tools directly:
 
 ---
 
+## Claude Code Hooks
+
+Claude Nexus uses Claude Code hooks for automatic notifications. Run `bash setup_hooks.sh` to install them.
+
+### How Hooks Work
+
+Hooks are configured in `~/.claude/settings.json` and fire automatically:
+
+| Hook | Event | Notification |
+|------|-------|-------------|
+| **Stop** | Claude finishes responding | "Waiting for input" (2-min cooldown) |
+
+The hook sends an HTTP request to the proxy (localhost:8765), which forwards it to your Cardputer via BLE.
+
+### Manual Hook Setup
+
+If you prefer to configure manually, add this to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "LOCK=/tmp/.cardputer_waiting_lock; if [ -f \"$LOCK\" ] && [ $(($(date +%s) - $(cat \"$LOCK\"))) -lt 120 ]; then exit 0; fi; date +%s > \"$LOCK\"; curl -s -X POST http://localhost:8765/waiting -H 'Content-Type: application/json' -d '{\"body\":\"Claude Code is waiting for input\"}' > /dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Removing Hooks
+
+Delete the `hooks` section from `~/.claude/settings.json`, or run:
+```bash
+jq 'del(.hooks)' ~/.claude/settings.json > /tmp/cs.json && mv /tmp/cs.json ~/.claude/settings.json
+```
+
+---
+
 ## Project Structure
 
 ```
@@ -289,6 +368,7 @@ cardputer-nexus/
 │   └── requirements.txt
 ├── mcp/
 │   └── server.py            # MCP server (alternative to proxy)
+├── setup_hooks.sh           # Auto-configure Claude Code hooks
 └── README.md
 ```
 
@@ -314,6 +394,11 @@ cardputer-nexus/
 - Ensure device shows "LINKED" status
 - Try disconnecting USB if connected
 
+### Hooks not firing
+- Ensure proxy is running (`python debug_demo.py`)
+- Check `~/.claude/settings.json` has the hooks section
+- Run `bash setup_hooks.sh` to reinstall
+
 ---
 
 ## Important Notes
@@ -322,6 +407,7 @@ cardputer-nexus/
 - Voice features require the Cardputer ADV variant (with mic/speaker)
 - Text input mode works on all Cardputer variants
 - BLE range is approximately 10 meters
+- Proxy must be running for hooks/notifications to work
 
 ---
 
