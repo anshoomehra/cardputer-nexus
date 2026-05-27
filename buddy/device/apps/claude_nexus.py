@@ -524,7 +524,12 @@ def run():
                     last_redraw = now
 
             elif state in ("notify", "sent"):
-                if k in (' ', 0x20, 't', 'T', 0x74, 0x54):
+                # Auto-dismiss after 30 seconds
+                if time.ticks_diff(now, last_redraw) > 30000:
+                    _draw_main()
+                    state = "idle"
+                    last_redraw = now
+                elif k in (' ', 0x20, 't', 'T', 0x74, 0x54):
                     _last_activity = now
                     _draw_main()
                     state = "idle"
