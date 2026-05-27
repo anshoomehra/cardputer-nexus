@@ -68,7 +68,7 @@ After 5 minutes of no activity, your pet falls asleep and you get a gentle remin
 ### Prerequisites
 - M5Stack Cardputer ADV (with speaker)
 - Python 3.10+
-- Claude Code
+- Claude Code CLI
 - macOS (tested), Linux (should work)
 
 ### 1. Clone & Setup
@@ -97,7 +97,7 @@ pip install mpremote
 python -m mpremote connect /dev/tty.usbmodem101 cp buddy/device/apps/claude_nexus.py :/flash/apps/claude_nexus.py
 ```
 
-### 3. Configure (Optional - For Voice Features)
+### 3. Configure (Optional - For Voice/API Features)
 
 ```bash
 cd host
@@ -111,7 +111,7 @@ CLAUDE_API_KEY = "sk-ant-..."
 CLAUDE_ENDPOINT = "https://api.anthropic.com"
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 
-# Option B: Use a local/enterprise endpoint (no API key needed)
+# Option B: Use a local endpoint (no API key needed)
 CLAUDE_ENDPOINT = "http://localhost:9999"
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 CLAUDE_API_KEY = ""  # Leave empty for local endpoints
@@ -129,7 +129,7 @@ python debug_demo.py
 **Terminal 2 — Device:**
 1. Reset Cardputer
 2. Select **Claude Nexus** from app menu
-3. Wait for "LINKED" status
+3. Wait for "LINKED" status (disconnect USB first - BLE only allows one connection)
 
 ### 5. Test It!
 
@@ -174,9 +174,10 @@ Send a notification to the device.
 {
   "title": "Build Complete",
   "body": "All tests passed",
-  "urgency": "info"  // "info" | "warn" | "crit"
+  "urgency": "info"
 }
 ```
+Urgency levels: `"info"` | `"warn"` | `"crit"`
 
 ### POST /stats
 Update token usage display.
@@ -198,124 +199,9 @@ Alert that Claude Code is waiting for input.
 
 ---
 
-## MCP Server (Alternative)
-
-Instead of the HTTP proxy, you can use the MCP server for direct Claude Code integration.
-
-### Setup
-
-```bash
-cd mcp
-pip install -r requirements.txt
-
-# Register with Claude Code
-claude mcp add cardputer -- python "$(pwd)/server.py"
-```
-
-### Available Tools
-
-Once registered, Claude Code can call these tools directly:
-
-| Tool | Description |
-|------|-------------|
-| `notify(title, body, urgency)` | Send notification to device |
-| `ask(question, choices)` | Ask user to choose from options |
-| `confirm(title)` | Request confirmation (hold Y for 2s) |
-
-### Example Usage in Claude Code
-
-```
-"Send a notification to my Cardputer saying the build is complete"
-→ Claude calls: notify(title="Build", body="Complete!", urgency="info")
-
-"Ask me on my Cardputer which env to deploy to"  
-→ Claude calls: ask(question="Deploy to?", choices=["dev","staging","prod"])
-```
-
-**Note:** MCP and HTTP proxy both need BLE connection - only run one at a time.
-
-
----
-
-## Project Structure
-
-```
-cardputer-nexus/
-├── buddy/device/apps/
-│   └── claude_nexus.py      # Main device app (MicroPython)
-├── host/
-│   ├── debug_demo.py        # BLE proxy with HTTP API
-│   ├── config.example.py    # Configuration template
-│   └── requirements.txt
-├── mcp/
-│   └── server.py            # MCP server (alternative to proxy)
-└── README.md
-```
-
----
-
-## Troubleshooting
-
-### Device not connecting
-- Make sure USB is disconnected (BLE only allows one connection)
-- Restart the proxy
-- Reset the device and relaunch the app
-
-### No sound
-- Original Cardputer has no speaker — you need **Cardputer ADV**
-- Sound plays but is quiet? We set volume to max (255)
-
-### Keyboard not responding
-- There's an 800ms delay after M5.begin() before keyboard works
-- This is handled automatically in the app
-
----
-
-## Integration with Claude Code
-
-To receive commands from your Cardputer in Claude Code, set up a file watcher:
-
-```bash
-# The proxy writes commands to this file
-cat ~/.cardputer_voice_cmd
-
-# Watch for changes (in your Claude Code session)
-# Claude Code can monitor this file and respond to commands
-```
-
----
-
-## Credits
-
-- **Pet system inspired by**: [y88huang/claude-desktop-buddy-cardputer](https://github.com/y88huang/claude-desktop-buddy-cardputer)
-- **Original voice AI**: [dakshaymehta/cardputer-claude-os](https://github.com/dakshaymehta/cardputer-claude-os)
-- **m5-onboard skill**: [moremas/build-with-claude](https://github.com/moremas/build-with-claude)
-
----
-
-## Important Notes
-
-- **This works with Claude Code (CLI)**, not Claude Desktop
-- Voice features require the Cardputer ADV variant (with mic/speaker)
-- Text input mode works on all Cardputer variants
-
----
-
-## License
-
-Apache 2.0 — See [LICENSE](LICENSE)
-
----
-
-<p align="center">
-  <strong>Your pocket AI companion</strong>
-</p>
-
----
-
 ## Receiving Commands in Claude Code
 
-When you send a command from the Cardputer (press T, type, Enter), the proxy writes it to `~/.cardputer_voice_cmd`. 
+When you send a command from the Cardputer (press T, type, Enter), the proxy writes it to `~/.cardputer_voice_cmd`.
 
 ### Option 1: Ask Claude Code to Watch
 
@@ -349,6 +235,110 @@ done
 └─────────────┘                └─────────────┘               └─────────────┘
 ```
 
-The proxy bridges both directions:
-- **Device → Claude Code**: Writes to `~/.cardputer_voice_cmd`
-- **Claude Code → Device**: HTTP POST to `localhost:8765/notify`
+---
+
+## MCP Server (Alternative)
+
+Instead of the HTTP proxy, you can use the MCP server for direct Claude Code integration.
+
+### Setup
+
+```bash
+cd mcp
+pip install -r requirements.txt
+
+# Register with Claude Code
+claude mcp add cardputer -- python "$(pwd)/server.py"
+```
+
+### Available Tools
+
+Once registered, Claude Code can call these tools directly:
+
+| Tool | Description |
+|------|-------------|
+| `notify(title, body, urgency)` | Send notification to device |
+| `ask(question, choices)` | Ask user to choose from options |
+| `confirm(title)` | Request confirmation (hold Y for 2s) |
+
+### Example Usage
+
+```
+"Send a notification to my Cardputer saying the build is complete"
+→ Claude calls: notify(title="Build", body="Complete!", urgency="info")
+
+"Ask me on my Cardputer which env to deploy to"  
+→ Claude calls: ask(question="Deploy to?", choices=["dev","staging","prod"])
+```
+
+**Note:** MCP and HTTP proxy both need BLE connection — only run one at a time.
+
+---
+
+## Project Structure
+
+```
+cardputer-nexus/
+├── buddy/device/apps/
+│   ├── claude_nexus.py      # Main device app (MicroPython)
+│   ├── pager.py             # Managed agents monitor
+│   └── snake.py             # Game
+├── host/
+│   ├── debug_demo.py        # BLE proxy with HTTP API
+│   ├── config.example.py    # Configuration template
+│   └── requirements.txt
+├── mcp/
+│   └── server.py            # MCP server (alternative to proxy)
+└── README.md
+```
+
+---
+
+## Troubleshooting
+
+### Device not connecting
+- Make sure USB is disconnected (BLE only allows one connection)
+- Restart the proxy
+- Reset the device and relaunch the app
+
+### No sound
+- Original Cardputer has no speaker — you need **Cardputer ADV**
+- Sound plays but is quiet? Volume is set to max (255)
+
+### Keyboard not responding
+- There's an 800ms delay after M5.begin() before keyboard works
+- This is handled automatically in the app
+
+### Notifications not showing
+- Check proxy logs for "SEND:" messages
+- Ensure device shows "LINKED" status
+- Try disconnecting USB if connected
+
+---
+
+## Important Notes
+
+- **This works with Claude Code (CLI)**, not Claude Desktop
+- Voice features require the Cardputer ADV variant (with mic/speaker)
+- Text input mode works on all Cardputer variants
+- BLE range is approximately 10 meters
+
+---
+
+## Credits
+
+- **Pet system inspired by**: [y88huang/claude-desktop-buddy-cardputer](https://github.com/y88huang/claude-desktop-buddy-cardputer)
+- **Original voice AI**: [dakshaymehta/cardputer-claude-os](https://github.com/dakshaymehta/cardputer-claude-os)
+- **m5-onboard skill**: [moremas/build-with-claude](https://github.com/moremas/build-with-claude)
+
+---
+
+## License
+
+Apache 2.0 — See [LICENSE](LICENSE)
+
+---
+
+<p align="center">
+  <strong>Your pocket AI companion</strong>
+</p>
