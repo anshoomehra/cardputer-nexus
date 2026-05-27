@@ -229,9 +229,11 @@ class DebugProxy:
             self.receiving_audio = True
             self.current_mode = mode
             self.audio_count += 1
+            self.audio_fmt = msg.get("fmt", "wav")
+            self.audio_rate = msg.get("rate", 16000)
             log("━" * 50, C.H)
             log(f"AUDIO RECORDING #{self.audio_count} STARTED", C.BOLD)
-            log(f"  Mode: {mode}", C.H)
+            log(f"  Mode: {mode}, Format: {self.audio_fmt}, Rate: {self.audio_rate}", C.H)
             log(f"  Expected size: {msg.get('size')} bytes", C.H)
             log("━" * 50, C.H)
         
@@ -257,8 +259,20 @@ class DebugProxy:
             log("✗ Audio too short!", C.R)
             await self._send({"type": "error", "error": "Audio too short"})
             return
-        
-        wav_info = analyze_wav(bytes(self.audio_buffer))
+
+        # If raw PCM from device mic, wrap in WAV header
+        audio_data = bytes(self.audio_buffer)
+        if getattr(self, 'audio_fmt', 'wav') == 'pcm16':
+            rate = getattr(self, 'audio_rate', 8000)
+            log(f"Wrapping raw PCM in WAV (rate={rate})", C.C)
+            data_size = len(audio_data)
+            hdr = struct.pack('<4sI4s4sIHHIIHH4sI',
+                b'RIFF', 36 + data_size, b'WAVE',
+                b'fmt ', 16, 1, 1, rate, rate * 2, 2, 16,
+                b'data', data_size)
+            audio_data = hdr + audio_data
+
+        wav_info = analyze_wav(audio_data)
         
         log("WAV File Analysis:", C.C)
         for key, value in wav_info.items():
@@ -267,13 +281,13 @@ class DebugProxy:
         
         debug_path = f"/tmp/cardputer_audio_{self.audio_count:03d}_{datetime.now().strftime('%H%M%S')}.wav"
         with open(debug_path, "wb") as f:
-            f.write(bytes(self.audio_buffer))
+            f.write(audio_data)
         log(f"✓ Saved: {debug_path}", C.G)
-        
+
         log("Transcribing with Whisper...", C.Y)
-        
+
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            f.write(bytes(self.audio_buffer))
+            f.write(audio_data)
             temp_path = f.name
         
         try:

@@ -374,58 +374,56 @@ def _send(msg):
     return False
 
 def _record_device_mic():
-    """Record from Cardputer's built-in mic and send audio over BLE."""
+    """Record from Cardputer's mic to flash, then stream over BLE."""
+    if not _connected or not _conn_handle or not _tx_handle:
+        return False
     try:
         gc.collect()
         mic = M5.Mic
         mic.begin()
 
-        # Record 2 seconds at 8kHz mono 16-bit = 32KB buffer
-        sample_rate = 8000
-        num_samples = sample_rate * 2
-        buf = bytearray(num_samples * 2)
-
-        mic.record(buf, sample_rate, True)
+        # Record 3 seconds at 8kHz directly to flash (no RAM needed!)
+        wav_path = '/flash/_voice.wav'
+        mic.recordWavFile(wav_path, 8000, True, 3)
         mic.end()
 
-        data_size = len(buf)
-        total_size = 44 + data_size
+        # Get file size
+        import os
+        fsize = os.stat(wav_path)[6]
 
         # Send audio_start
-        _send({"type": "audio_start", "mode": "claude_code", "size": total_size})
-        time.sleep_ms(50)
+        _send({"type": "audio_start", "mode": "claude_code", "size": fsize})
+        time.sleep_ms(100)
 
-        # Build and send 44-byte WAV header
-        hdr = bytearray(44)
-        hdr[0:4] = b'RIFF'
-        hdr[4:8] = (36 + data_size).to_bytes(4, 'little')
-        hdr[8:12] = b'WAVE'
-        hdr[12:16] = b'fmt '
-        hdr[16:20] = (16).to_bytes(4, 'little')
-        hdr[20:22] = (1).to_bytes(2, 'little')
-        hdr[22:24] = (1).to_bytes(2, 'little')
-        hdr[24:28] = sample_rate.to_bytes(4, 'little')
-        hdr[28:32] = (sample_rate * 2).to_bytes(4, 'little')
-        hdr[32:34] = (2).to_bytes(2, 'little')
-        hdr[34:36] = (16).to_bytes(2, 'little')
-        hdr[36:40] = b'data'
-        hdr[40:44] = data_size.to_bytes(4, 'little')
-        _ble.gatts_notify(_conn_handle, _tx_handle, hdr)
-        time.sleep_ms(30)
-
-        # Stream audio buffer directly in chunks (no copy)
+        # Stream file over BLE in small chunks
         chunk = 200
-        for i in range(0, data_size, chunk):
-            if _connected and _conn_handle and _tx_handle:
-                _ble.gatts_notify(_conn_handle, _tx_handle, buf[i:i + chunk])
-                time.sleep_ms(25)
+        with open(wav_path, 'rb') as f:
+            while True:
+                data = f.read(chunk)
+                if not data:
+                    break
+                if _connected and _conn_handle and _tx_handle:
+                    _ble.gatts_notify(_conn_handle, _tx_handle, data)
+                    time.sleep_ms(50)
 
-        time.sleep_ms(50)
+        time.sleep_ms(100)
         _send({"type": "audio_end"})
+
+        # Clean up temp file
+        try:
+            os.remove(wav_path)
+        except:
+            pass
         gc.collect()
         return True
-    except:
+    except Exception as e:
         gc.collect()
+        try:
+            mic.end()
+        except:
+            pass
+        _LCD.setTextColor(_RED, _BLACK)
+        _LCD.drawString(str(e)[:35], 5, 110)
         return False
 
 def _get_text(kb):
@@ -611,9 +609,10 @@ def run():
                         ok = _record_device_mic()
                         if ok:
                             _draw_voice("processing")
+                            state = "voice"
                         else:
-                            _draw_sent("Mic error")
-                        state = "voice"
+                            # Error details shown by _record_device_mic
+                            state = "sent"
                         last_redraw = now
 
             elif state == "voice":
