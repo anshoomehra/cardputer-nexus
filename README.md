@@ -74,7 +74,7 @@ After 5 minutes of no activity, your pet falls asleep and you get a gentle remin
 ### 1. Clone & Setup
 
 ```bash
-git clone https://github.com/your-username/cardputer-nexus.git
+git clone https://github.com/anshoomehra/cardputer-nexus.git
 cd cardputer-nexus
 
 # Install host dependencies
@@ -195,6 +195,45 @@ Alert that Claude Code is waiting for input.
   "body": "Waiting for your instructions..."
 }
 ```
+
+---
+
+## MCP Server (Alternative)
+
+Instead of the HTTP proxy, you can use the MCP server for direct Claude Code integration.
+
+### Setup
+
+```bash
+cd mcp
+pip install -r requirements.txt
+
+# Register with Claude Code
+claude mcp add cardputer -- python "$(pwd)/server.py"
+```
+
+### Available Tools
+
+Once registered, Claude Code can call these tools directly:
+
+| Tool | Description |
+|------|-------------|
+| `notify(title, body, urgency)` | Send notification to device |
+| `ask(question, choices)` | Ask user to choose from options |
+| `confirm(title)` | Request confirmation (hold Y for 2s) |
+
+### Example Usage in Claude Code
+
+```
+"Send a notification to my Cardputer saying the build is complete"
+→ Claude calls: notify(title="Build", body="Complete!", urgency="info")
+
+"Ask me on my Cardputer which env to deploy to"  
+→ Claude calls: ask(question="Deploy to?", choices=["dev","staging","prod"])
+```
+
+**Note:** MCP and HTTP proxy both need BLE connection - only run one at a time.
+
 
 ---
 
