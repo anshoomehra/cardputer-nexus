@@ -2,6 +2,19 @@
 
 All notable changes to Cardputer Nexus will be documented in this file.
 
+## [0.3.0] - 2026-05-27
+
+### Added
+- **Voice Commands** — Press V to record from Mac mic, transcribed with Whisper
+  - Host proxy records 5s audio via `sounddevice`
+  - Local Whisper STT transcription
+  - Result sent to Claude Code as command
+  - Also available via `POST /voice` HTTP endpoint
+- **Sleep/Wake Fix** — Pressing T/V while sleeping just wakes up without triggering text/voice mode
+
+### Known Issues
+- **On-device mic not working** — The Cardputer ADV routes its microphone through an ES8311 audio codec (I2C address 0x18). The UIFlow 2.0 MicroPython firmware does not properly initialize the ES8311's ADC recording path, causing all mic captures to return silence. This is a firmware limitation (not a hardware defect) and affects all Cardputer ADV units running UIFlow 2.0. Voice commands work via Mac mic as a workaround.
+
 ## [0.2.0] - 2026-05-26
 
 ### Added

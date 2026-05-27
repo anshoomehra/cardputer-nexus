@@ -38,6 +38,7 @@
 | **Claude Code → Device** | "Waiting for input" alerts | Auto via hooks |
 | **Claude Code → Device** | Interactive prompts | `curl localhost:8765/ask` |
 | **Device → Claude Code** | Text commands | Press T, type, press Enter |
+| **Device → Claude Code** | Voice commands | Press V, speak into Mac mic |
 
 ## Features
 
@@ -75,6 +76,16 @@ The proxy sends randomized health reminders every hour:
 
 ### Automatic "Waiting" Notifications
 Claude Code hooks automatically notify your device when Claude is waiting for your input — no manual setup needed after initial install
+
+### Voice Commands
+Press **V** to trigger voice recording from your Mac's microphone:
+- Device sends a voice request to the host proxy over BLE
+- Host records 5 seconds of audio from the Mac mic using `sounddevice`
+- Audio is transcribed locally with OpenAI Whisper
+- Transcription is sent to Claude Code as a command
+- Also available via HTTP: `curl localhost:8765/voice`
+
+**Note:** On-device microphone recording is not currently supported. The Cardputer ADV routes its mic through an ES8311 audio codec which the UIFlow 2.0 MicroPython firmware does not properly initialize for recording (all captures return silence). This is a firmware limitation, not a hardware defect. Voice commands work via the Mac mic as a workaround.
 
 ---
 
@@ -188,6 +199,7 @@ curl -X POST http://localhost:8765/stats \
 | Key | Action |
 |-----|--------|
 | **T** or **Space** | Open text input |
+| **V** | Voice command (records from Mac mic) |
 | **P** | Cycle pet (Cat → Dog → Blob → Bunny) |
 | **Q** | Quit app |
 | **Enter** | Send message (in text mode) |
@@ -237,6 +249,15 @@ Alert that Claude Code is waiting for input.
 ```json
 {
   "body": "Waiting for your instructions..."
+}
+```
+
+### POST /voice
+Trigger voice recording from the Mac microphone. Records 5 seconds, transcribes with Whisper, and sends the result to Claude Code.
+
+```json
+{
+  "mode": "claude_code"
 }
 ```
 
