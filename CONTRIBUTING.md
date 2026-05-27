@@ -1,46 +1,28 @@
 # Contributing to Cardputer Nexus
 
-Thank you for your interest in contributing!
+Thanks for your interest in contributing!
 
-## Code of Conduct
-
-Be respectful, inclusive, and constructive.
-
-## How to Contribute
-
-### Reporting Bugs
-
-1. Check existing issues first
-2. Include device info (Cardputer version, firmware)
-3. Provide steps to reproduce
-
-### Feature Requests
-
-1. Open an issue with `[Feature]` prefix
-2. Describe the use case
-3. Consider enterprise implications
-
-### Pull Requests
+## Getting Started
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
+2. Set up your development environment (see README.md)
 3. Make your changes
-4. Test on real hardware if possible
-5. Update documentation
-6. Submit PR with clear description
+4. Test on actual hardware if possible
+5. Submit a pull request
 
-## Priority Areas
+## Guidelines
 
-- 🌐 More language support for voice
-- 🎨 Pet species and animations (from y88huang's system)
-- 🔌 Additional MCP tools
-- 📱 iOS/Android companion apps
-- 🏢 Enterprise management console
+- Keep code simple and readable
+- Test on M5Stack Cardputer ADV
+- Document new features in README
 
-## Attribution
+## Ideas for Contributions
 
-When contributing code derived from other projects, ensure proper attribution in NOTICE.
+- More pet species and animations
+- Additional sound patterns
+- Better keyboard handling
+- WiFi-based communication (as BLE alternative)
 
----
+## License
 
-Thank you for contributing! 🎉
+By contributing, you agree that your contributions will be licensed under the Apache 2.0 License.

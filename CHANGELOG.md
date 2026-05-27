@@ -2,38 +2,39 @@
 
 All notable changes to Cardputer Nexus will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
+## [0.2.0] - 2026-05-26
 
 ### Added
-- **Local Voice Proxy** (`host/local_proxy.py`)
-  - Local Whisper STT support (no Cloudflare needed)
-  - Enterprise Claude endpoint configuration (localhost:9999)
-  - macOS native dictation placeholder
-- **Enterprise Documentation** (`docs/enterprise.md`)
-  - Fleet deployment guide
-  - Compliance considerations (SOC 2, HIPAA, PCI)
-  - Audit logging setup
-- **Nexus Branding**
-  - New README with security-focused messaging
-  - Updated NOTICE with full attribution
-- **Pet Integration Plan**
-  - Framework for y88huang's companion system (coming soon)
+- **Claude Nexus App** - Unified companion with two-way Claude Code communication
+  - 4 ASCII pets (Cat, Dog with tail wag, Blob, Bunny)
+  - Sound alerts with urgency levels (info/warn/crit)
+  - Token usage display in top bar
+  - Idle detection with sleeping pet animation
+  - Text input mode for sending commands to Claude Code
+- **Host Proxy** (`host/debug_demo.py`)
+  - BLE proxy bridging device to Claude Code
+  - HTTP API endpoints: /notify, /stats, /waiting
+  - Writes device commands to ~/.cardputer_voice_cmd
+- **API Key Support**
+  - Direct Anthropic API usage (config.example.py)
+  - Also supports local endpoints
 
 ### Changed
-- Restructured README for Nexus identity
-- Added proper credits to all upstream projects
+- Updated MCP server to use Nordic UART Service UUIDs
+- Simplified README with architecture diagram
+- Clarified this works with Claude Code CLI, not Desktop
 
-### Inherited from cardputer-claude-os
+### Removed
+- Redundant apps (keep nexus, pager, snake)
+
+## [0.1.0] - Initial Fork
+
+### Inherited from upstream
 - Claude Buddy BLE connection
-- Push to Claude (Voice + Chat via Cloudflare)
+- Push to Claude (Voice + Chat)
 - Claude Pager (Managed Agents)
 - Cardputer MCP server
 - Auto-discovery app launcher
-- Central Console browser UI
-- Mac artifact sync
 
 ---
 
@@ -43,5 +44,5 @@ This project stands on the shoulders of giants:
 
 - **dakshaymehta/cardputer-claude-os** — Core voice AI, pager, and MCP functionality
 - **moremas/build-with-claude** — m5-onboard Claude Code skill
-- **y88huang/claude-desktop-buddy-cardputer** — Pet companion system (planned)
+- **y88huang/claude-desktop-buddy-cardputer** — Pet companion system inspiration
 - **anthropics/claude-desktop-buddy** — BLE protocol reference
