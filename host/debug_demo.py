@@ -434,7 +434,7 @@ class DebugProxy:
         log("━" * 50, C.H)
         
         cmd_file = Path.home() / ".cardputer_voice_cmd"
-        cmd_file.write_text(text)
+        cmd_file.write_text(f"{text}\n#{int(time.time())}")
         log(f"✓ Written to {cmd_file}", C.G)
         
         await self._send({"type": "ack", "text": text})

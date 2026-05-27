@@ -159,7 +159,7 @@ def _draw_main():
 
     _LCD.fillRect(0, _H - 18, _W, 18, _DARK)
     _LCD.setTextColor(_GRAY, _DARK)
-    _LCD.drawString("T txt V mic P pet Q quit", 40, _H - 14)
+    _LCD.drawString("T txt V/M mic P pet Q quit", 35, _H - 14)
 
     _idle_alert_sent = False
 
@@ -302,7 +302,7 @@ def _draw_idle_alert():
 
     _LCD.fillRect(0, _H - 18, _W, 18, _DARK)
     _LCD.setTextColor(_GRAY, _DARK)
-    _LCD.drawString("T txt V mic P pet Q quit", 40, _H - 14)
+    _LCD.drawString("T txt V/M mic P pet Q quit", 35, _H - 14)
 
     _beep_idle()
 
@@ -582,30 +582,27 @@ def run():
                         _draw_main()
                         last_redraw = now
                     else:
-                        # Check for long press (hold V = device mic)
-                        v_start = time.ticks_ms()
-                        held = False
-                        while time.ticks_diff(time.ticks_ms(), v_start) < 600:
-                            kb.tick()
-                            kk = kb.get_key()
-                            if kk in ('v', 'V', 0x76, 0x56):
-                                held = True
-                            time.sleep_ms(30)
+                        # V = Mac mic recording via host
+                        _draw_voice("listening")
+                        _send({"type": "voice_request", "mode": "claude_code"})
+                        state = "voice"
+                        last_redraw = now
 
-                        if held:
-                            # Long press: record from Cardputer mic
-                            _draw_voice("recording")
-                            ok = _record_device_mic()
-                            if ok:
-                                _draw_voice("processing")
-                            else:
-                                _draw_sent("Mic error")
-                            state = "voice"
+                if k in ('m', 'M', 0x6D, 0x4D):
+                    _last_activity = now
+                    if _idle_alert_sent:
+                        _idle_alert_sent = False
+                        _draw_main()
+                        last_redraw = now
+                    else:
+                        # M = device mic recording
+                        _draw_voice("recording")
+                        ok = _record_device_mic()
+                        if ok:
+                            _draw_voice("processing")
                         else:
-                            # Short press: Mac mic
-                            _draw_voice("listening")
-                            _send({"type": "voice_request", "mode": "claude_code"})
-                            state = "voice"
+                            _draw_sent("Mic error")
+                        state = "voice"
                         last_redraw = now
 
             elif state == "voice":
