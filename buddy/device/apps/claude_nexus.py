@@ -191,7 +191,40 @@ def _draw_notify(title, body, urgency="info"):
     _LCD.setTextColor(_GRAY, _DARK)
     _LCD.drawString("SPACE dismiss", 75, _H - 12)
 
+
     _beep(urgency)
+
+# Global to store current ask context
+_ask_id = None
+_ask_choices = []
+
+def _draw_ask(question, choices):
+    _LCD.fillScreen(_BLACK)
+    _LCD.fillRect(0, 0, _W, 20, _DARK)
+    _LCD.setTextColor(_YELLOW, _DARK)
+    _LCD.drawString("ACTION NEEDED", 6, 5)
+
+    _draw_stats()
+
+    _draw_pet("alert", 22)
+
+    # Question
+    _LCD.setTextColor(_CREAM, _BLACK)
+    q_x = max(10, (_W - len(question[:35]) * 6) // 2)
+    _LCD.drawString(question[:35], q_x, 72)
+
+    # Choices (up to 4)
+    _LCD.setTextColor(_CYAN, _BLACK)
+    y = 88
+    for i, choice in enumerate(choices[:4]):
+        choice_text = f"{i+1}={choice[:12]}"
+        _LCD.drawString(choice_text, 10 + (i % 2) * 115, y + (i // 2) * 14)
+
+    _LCD.fillRect(0, _H - 15, _W, 15, _DARK)
+    _LCD.setTextColor(_GRAY, _DARK)
+    _LCD.drawString("Press 1-4 to choose", 60, _H - 12)
+
+    _beep("warn")
 
 def _draw_text_input(text, cursor):
     _LCD.fillScreen(_BLACK)
@@ -405,6 +438,14 @@ def run():
                     state = "notify"
                     last_redraw = now
                     continue
+                elif msg_type == "ask":
+                    global _ask_id, _ask_choices
+                    _ask_id = msg.get("id", "")
+                    _ask_choices = msg.get("choices", [])
+                    _draw_ask(msg.get("question", "?"), _ask_choices)
+                    state = "ask"
+                    last_redraw = now
+                    continue
                 elif msg_type in ("ack", "response"):
                     _draw_sent(msg.get("text", "OK"))
                     state = "sent"
@@ -462,6 +503,24 @@ def run():
                 if time.ticks_diff(now, _last_activity) > 15000:
                     _draw_main()
                     state = "idle"
+                    last_redraw = now
+
+            elif state == "ask":
+                # Handle number key presses for choices
+                choice = None
+                if k in ('1', 0x31):
+                    choice = 0
+                elif k in ('2', 0x32):
+                    choice = 1
+                elif k in ('3', 0x33):
+                    choice = 2
+                elif k in ('4', 0x34):
+                    choice = 3
+                
+                if choice is not None and choice < len(_ask_choices):
+                    _send({"type": "ask_response", "id": _ask_id, "choice": choice, "value": _ask_choices[choice]})
+                    _draw_sent(f"Selected: {_ask_choices[choice]}")
+                    state = "sent"
                     last_redraw = now
 
             elif state in ("notify", "sent"):
