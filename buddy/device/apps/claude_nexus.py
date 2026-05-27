@@ -373,6 +373,50 @@ def _send(msg):
             pass
     return False
 
+def _record_device_mic():
+    """Record from Cardputer's built-in mic and send audio over BLE."""
+    try:
+        mic = M5.Mic
+        mic.begin()
+
+        # Record 4 seconds at 16kHz mono 16-bit
+        sample_rate = 16000
+        num_samples = sample_rate * 4
+        buf = bytearray(num_samples * 2)
+
+        mic.record(buf, sample_rate, True)
+        mic.end()
+
+        # Build WAV header
+        data_size = len(buf)
+        wav = bytearray(44 + data_size)
+        wav[0:4] = b'RIFF'
+        wav[4:8] = (36 + data_size).to_bytes(4, 'little')
+        wav[8:12] = b'WAVE'
+        wav[12:16] = b'fmt '
+        wav[16:20] = (16).to_bytes(4, 'little')
+        wav[20:22] = (1).to_bytes(2, 'little')  # PCM
+        wav[22:24] = (1).to_bytes(2, 'little')  # mono
+        wav[24:28] = sample_rate.to_bytes(4, 'little')
+        wav[28:32] = (sample_rate * 2).to_bytes(4, 'little')
+        wav[32:34] = (2).to_bytes(2, 'little')
+        wav[34:36] = (16).to_bytes(2, 'little')
+        wav[36:40] = b'data'
+        wav[40:44] = data_size.to_bytes(4, 'little')
+        wav[44:] = buf
+
+        # Send over BLE in chunks
+        _send({"type": "audio_start", "mode": "claude_code", "size": len(wav)})
+        chunk_size = 200
+        for i in range(0, len(wav), chunk_size):
+            if _connected and _conn_handle and _tx_handle:
+                _ble.gatts_notify(_conn_handle, _tx_handle, wav[i:i + chunk_size])
+                time.sleep_ms(30)
+        _send({"type": "audio_end"})
+        return True
+    except:
+        return False
+
 def _get_text(kb):
     text = ""
     cursor = True
@@ -538,10 +582,30 @@ def run():
                         _draw_main()
                         last_redraw = now
                     else:
-                        # Voice mode: request Mac mic recording from host
-                        _draw_voice("listening")
-                        _send({"type": "voice_request", "mode": "claude_code"})
-                        state = "voice"
+                        # Check for long press (hold V = device mic)
+                        v_start = time.ticks_ms()
+                        held = False
+                        while time.ticks_diff(time.ticks_ms(), v_start) < 600:
+                            kb.tick()
+                            kk = kb.get_key()
+                            if kk in ('v', 'V', 0x76, 0x56):
+                                held = True
+                            time.sleep_ms(30)
+
+                        if held:
+                            # Long press: record from Cardputer mic
+                            _draw_voice("recording")
+                            ok = _record_device_mic()
+                            if ok:
+                                _draw_voice("processing")
+                            else:
+                                _draw_sent("Mic error")
+                            state = "voice"
+                        else:
+                            # Short press: Mac mic
+                            _draw_voice("listening")
+                            _send({"type": "voice_request", "mode": "claude_code"})
+                            state = "voice"
                         last_redraw = now
 
             elif state == "voice":
