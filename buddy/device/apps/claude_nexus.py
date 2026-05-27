@@ -159,7 +159,7 @@ def _draw_main():
 
     _LCD.fillRect(0, _H - 18, _W, 18, _DARK)
     _LCD.setTextColor(_GRAY, _DARK)
-    _LCD.drawString("T type  P pet  Q quit", 55, _H - 14)
+    _LCD.drawString("T txt V mic P pet Q quit", 40, _H - 14)
 
     _idle_alert_sent = False
 
@@ -242,6 +242,26 @@ def _draw_text_input(text, cursor):
     _LCD.setTextColor(_GRAY, _DARK)
     _LCD.drawString("ENTER send  ESC cancel", 40, _H - 14)
 
+def _draw_voice(status="listening"):
+    """Show voice mode screen."""
+    _LCD.fillScreen(_BLACK)
+    _LCD.fillRect(0, 0, _W, 20, _DARK)
+    _LCD.setTextColor(_PINK, _DARK)
+    _LCD.drawString("VOICE MODE", 6, 5)
+    _draw_stats()
+    _draw_pet("alert", 22)
+    _LCD.setTextColor(_CREAM, _BLACK)
+    if status == "listening":
+        _LCD.drawString("Listening on Mac mic...", 45, 80)
+    elif status == "recording":
+        _LCD.drawString("Recording from device...", 40, 80)
+    elif status == "processing":
+        _LCD.drawString("Transcribing...", 70, 80)
+    _LCD.fillRect(0, _H - 15, _W, 15, _DARK)
+    _LCD.setTextColor(_GRAY, _DARK)
+    _LCD.drawString("ESC cancel", 80, _H - 12)
+    _beep("info")
+
 def _draw_sent(text):
     _LCD.fillScreen(_BLACK)
     _LCD.fillRect(0, 0, _W, 20, _DARK)
@@ -278,11 +298,11 @@ def _draw_idle_alert():
     _LCD.setTextColor(_GRAY, _BLACK)
     _LCD.drawString("No activity for 5 min", 55, 80)
     _LCD.setTextColor(_CYAN, _BLACK)
-    _LCD.drawString("Press T to wake me up!", 50, 95)
+    _LCD.drawString("Press any key to wake up!", 40, 95)
 
     _LCD.fillRect(0, _H - 18, _W, 18, _DARK)
     _LCD.setTextColor(_GRAY, _DARK)
-    _LCD.drawString("T type  P pet  Q quit", 55, _H - 14)
+    _LCD.drawString("T txt V mic P pet Q quit", 40, _H - 14)
 
     _beep_idle()
 
@@ -446,6 +466,20 @@ def run():
                     state = "ask"
                     last_redraw = now
                     continue
+                elif msg_type == "voice_result":
+                    text = msg.get("text", "")
+                    if text:
+                        _draw_sent("Voice: " + text[:25])
+                    else:
+                        _draw_sent("No speech detected")
+                    state = "sent"
+                    last_redraw = now
+                    continue
+                elif msg_type == "voice_status":
+                    if state == "voice":
+                        _draw_voice(msg.get("status", "processing"))
+                        last_redraw = now
+                    continue
                 elif msg_type in ("ack", "response"):
                     _draw_sent(msg.get("text", "OK"))
                     state = "sent"
@@ -478,18 +512,48 @@ def run():
 
                 if k in ('t', 'T', ' ', 0x74, 0x54, 0x20):
                     _last_activity = now
-                    _idle_alert_sent = False
-                    text = _get_text(kb)
-                    if text:
-                        _send({"type": "text", "content": text, "mode": "claude_code"})
+                    if _idle_alert_sent:
+                        # Just wake up from sleep, don't open text mode
+                        _idle_alert_sent = False
                         _draw_main()
-                        _LCD.setTextColor(_CYAN, _BLACK)
-                        _LCD.drawString("Sending...", 85, 100)
-                        state = "waiting"
                         last_redraw = now
                     else:
+                        # Normal: open text input
+                        text = _get_text(kb)
+                        if text:
+                            _send({"type": "text", "content": text, "mode": "claude_code"})
+                            _draw_main()
+                            _LCD.setTextColor(_CYAN, _BLACK)
+                            _LCD.drawString("Sending...", 85, 100)
+                            state = "waiting"
+                            last_redraw = now
+                        else:
+                            _draw_main()
+                            last_redraw = now
+
+                if k in ('v', 'V', 0x76, 0x56):
+                    _last_activity = now
+                    if _idle_alert_sent:
+                        _idle_alert_sent = False
                         _draw_main()
                         last_redraw = now
+                    else:
+                        # Voice mode: request Mac mic recording from host
+                        _draw_voice("listening")
+                        _send({"type": "voice_request", "mode": "claude_code"})
+                        state = "voice"
+                        last_redraw = now
+
+            elif state == "voice":
+                # Waiting for voice transcription result
+                if time.ticks_diff(now, last_redraw) > 30000:
+                    _draw_main()
+                    state = "idle"
+                    last_redraw = now
+                elif k in (0x1B,):
+                    _draw_main()
+                    state = "idle"
+                    last_redraw = now
 
             elif state == "waiting":
                 # Dog tail wag animation while waiting

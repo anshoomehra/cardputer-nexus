@@ -240,6 +240,13 @@ class DebugProxy:
             self.current_mode = mode
             log(f"TEXT INPUT: '{text}'", C.G)
             await self._process_text(text)
+
+        elif msg_type == "voice_request":
+            self.current_mode = mode
+            log("━" * 50, C.H)
+            log("VOICE REQUEST - Recording from Mac mic...", C.BOLD)
+            log("━" * 50, C.H)
+            asyncio.create_task(self._handle_voice_request(mode))
     
     async def _process_audio(self):
         log("━" * 50, C.Y)
@@ -304,6 +311,72 @@ class DebugProxy:
             await self._send_to_claude_code(text)
         else:
             await self._send_to_claude_api(text)
+
+    async def _handle_voice_request(self, mode: str):
+        """Record from Mac mic, transcribe with Whisper, send result back."""
+        try:
+            import sounddevice as sd
+            import numpy as np
+        except ImportError:
+            log("✗ sounddevice not installed: pip install sounddevice numpy", C.R)
+            await self._send({"type": "voice_result", "text": ""})
+            return
+
+        try:
+            # Notify device we're recording
+            await self._send({"type": "voice_status", "status": "listening"})
+
+            # Record from Mac mic
+            duration = 5  # seconds
+            sample_rate = 16000
+            log(f"Recording {duration}s from Mac mic (16kHz)...", C.Y)
+
+            audio = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: sd.rec(int(duration * sample_rate), samplerate=sample_rate,
+                                     channels=1, dtype='int16', blocking=True)
+            )
+
+            log(f"✓ Recorded {len(audio)} samples", C.G)
+
+            # Notify device we're transcribing
+            await self._send({"type": "voice_status", "status": "processing"})
+
+            # Save as WAV
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                temp_path = f.name
+                import wave as wave_mod
+                with wave_mod.open(f.name, 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)  # 16-bit
+                    wf.setframerate(sample_rate)
+                    wf.writeframes(audio.tobytes())
+
+            log("Transcribing with Whisper...", C.Y)
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: self.whisper.transcribe(temp_path, verbose=False)
+            )
+
+            text = result["text"].strip()
+            os.unlink(temp_path)
+
+            log("━" * 50, C.G if text else C.R)
+            if text:
+                log(f"VOICE TRANSCRIPTION: \"{text}\"", C.G)
+            else:
+                log("VOICE TRANSCRIPTION: (empty)", C.R)
+            log("━" * 50, C.G if text else C.R)
+
+            # Send result to device
+            await self._send({"type": "voice_result", "text": text})
+
+            # If in claude_code mode, also write to command file
+            if mode == "claude_code" and text:
+                self.current_mode = "claude_code"
+                await self._send_to_claude_code(text)
+
+        except Exception as e:
+            log(f"✗ Voice recording error: {e}", C.R)
+            await self._send({"type": "voice_result", "text": ""})
     
     async def _send_to_claude_api(self, text: str):
         log(f"→ Claude API: \"{text}\"", C.B)
@@ -507,13 +580,28 @@ async def handle_ask(request):
         data = await request.json()
         question = data.get('question', '?')
         choices = data.get('choices', [])
-        
+
         proxy = request.app['proxy']
         if proxy.client and proxy.client.is_connected:
             msg = {"type": "ask", "question": question, "choices": choices, "id": str(time.time())}
             await proxy._send(msg)
             # TODO: wait for response
             return web.json_response({"ok": True, "pending": True})
+        else:
+            return web.json_response({"ok": False, "error": "Not connected"}, status=503)
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+
+async def handle_voice(request):
+    """HTTP endpoint to trigger Mac mic recording and transcription."""
+    try:
+        data = await request.json() if request.can_read_body else {}
+        mode = data.get('mode', 'claude_code')
+
+        proxy = request.app['proxy']
+        if proxy.client and proxy.client.is_connected:
+            asyncio.create_task(proxy._handle_voice_request(mode))
+            return web.json_response({"ok": True, "recording": True})
         else:
             return web.json_response({"ok": False, "error": "Not connected"}, status=503)
     except Exception as e:
@@ -527,6 +615,7 @@ async def start_http_server(proxy):
     app.router.add_post('/ask', handle_ask)
     app.router.add_post('/stats', handle_stats)
     app.router.add_post('/waiting', handle_waiting)
+    app.router.add_post('/voice', handle_voice)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -537,6 +626,7 @@ async def start_http_server(proxy):
     log("  POST /stats   - send token stats", C.C)
     log("  POST /waiting - notify Claude is waiting", C.C)
     log("  POST /ask     - send question", C.C)
+    log("  POST /voice   - record from Mac mic", C.C)
 
 
 # Patch main to start HTTP server
