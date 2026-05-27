@@ -573,3 +573,65 @@ async def main_with_http():
 main = main_with_http
 if __name__ == "__main__":
     asyncio.run(main_with_http())
+
+# ─── Health Reminders (hourly) ───
+import random
+
+HEALTH_REMINDERS = [
+    ("Hydration Check!", "Time to drink some water"),
+    ("Stand Up!", "Stretch your legs, move around"),
+    ("Eye Break!", "Look away from screen for 20 sec"),
+    ("Posture Check!", "Sit up straight, relax shoulders"),
+    ("Deep Breath!", "Take 3 slow deep breaths"),
+]
+
+async def _health_reminder_loop(proxy):
+    """Send health reminders every hour."""
+    while True:
+        await asyncio.sleep(3600)  # 1 hour
+        if proxy.client and proxy.client.is_connected:
+            title, body = random.choice(HEALTH_REMINDERS)
+            msg = {"type": "notify", "title": title, "body": body, "urgency": "warn"}
+            try:
+                await proxy._send(msg)
+                log(f"Health reminder sent: {title}", C.G)
+            except:
+                pass
+
+# Patch main to include health reminders
+_prev_main = main
+
+async def main_with_health():
+    proxy = DebugProxy()
+    await start_http_server(proxy)
+
+    # Start health reminder task
+    health_task = asyncio.create_task(_health_reminder_loop(proxy))
+    log("Health reminders enabled (every 60 min)", C.G)
+
+    print(f"""
+{C.BOLD}{C.C}
+╔═══════════════════════════════════════════════════════════════╗
+║               CARDPUTER DEBUG & DEMO TOOL                    ║
+║                                                               ║
+║  Full visibility into everything happening with your device  ║
+║  Auto-reconnect enabled - device can quit & restart          ║
+║                                                               ║
+║  HTTP API: http://localhost:8765/notify                      ║
+║  Health reminders: every 60 min                              ║
+╚═══════════════════════════════════════════════════════════════╝
+{C.END}
+""")
+
+    try:
+        await proxy.run_with_reconnect()
+    except KeyboardInterrupt:
+        print(f"\n{C.Y}Shutting down...{C.END}")
+    finally:
+        health_task.cancel()
+        await proxy.disconnect()
+        print(f"{C.G}Disconnected.{C.END}")
+
+main = main_with_health
+if __name__ == "__main__":
+    asyncio.run(main_with_health())

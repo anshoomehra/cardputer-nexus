@@ -65,6 +65,14 @@ Claude Code can ask questions with numbered choices — press 1-4 to respond
 ### Idle Alerts
 After 5 minutes of no activity, your pet falls asleep and you get a gentle reminder beep
 
+### Health Reminders
+The proxy sends randomized health reminders every hour:
+- Hydration Check — drink water
+- Stand Up — stretch your legs
+- Eye Break — look away from screen
+- Posture Check — sit up straight
+- Deep Breath — take 3 slow breaths
+
 ### Automatic "Waiting" Notifications
 Claude Code hooks automatically notify your device when Claude is waiting for your input — no manual setup needed after initial install
 
