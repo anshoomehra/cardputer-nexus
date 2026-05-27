@@ -271,3 +271,45 @@ Apache 2.0 — See [LICENSE](LICENSE)
 <p align="center">
   <strong>Your pocket AI companion</strong>
 </p>
+
+---
+
+## Receiving Commands in Claude Code
+
+When you send a command from the Cardputer (press T, type, Enter), the proxy writes it to `~/.cardputer_voice_cmd`. 
+
+### Option 1: Ask Claude Code to Watch
+
+Simply tell Claude Code:
+> "Watch ~/.cardputer_voice_cmd for commands from my Cardputer and execute them"
+
+Claude Code will set up a file monitor and respond to your commands.
+
+### Option 2: Manual File Watch
+
+```bash
+# In a terminal, watch for new commands:
+last=""; while true; do 
+  current=$(cat ~/.cardputer_voice_cmd 2>/dev/null)
+  if [ -n "$current" ] && [ "$current" != "$last" ]; then 
+    echo "Command: $current"
+    last="$current"
+  fi
+  sleep 1
+done
+```
+
+### How It Works
+
+```
+┌─────────────┐      BLE       ┌─────────────┐     File      ┌─────────────┐
+│  Cardputer  │ ────────────►  │   Proxy     │ ───────────►  │ Claude Code │
+│  (T + type) │                │             │               │             │
+│             │  ◄──────────── │  HTTP API   │  ◄─────────── │  (responds) │
+│  (display)  │   Notification │  :8765      │   curl/notify │             │
+└─────────────┘                └─────────────┘               └─────────────┘
+```
+
+The proxy bridges both directions:
+- **Device → Claude Code**: Writes to `~/.cardputer_voice_cmd`
+- **Claude Code → Device**: HTTP POST to `localhost:8765/notify`
