@@ -416,6 +416,19 @@ def run():
     _draw_main()
 
     time.sleep_ms(800)
+    # Pulse keyboard matrix column GPIOs to prime scan hardware
+    import machine as _mach
+    for pin_num in (13, 15, 3, 4, 5, 6, 7):
+        try:
+            p = _mach.Pin(pin_num, _mach.Pin.OUT)
+            p.value(0)
+            time.sleep_ms(2)
+            p.value(1)
+            time.sleep_ms(2)
+            _mach.Pin(pin_num, _mach.Pin.IN)
+        except:
+            pass
+    time.sleep_ms(50)
     kb = MatrixKeyboard()
     time.sleep_ms(400)
 

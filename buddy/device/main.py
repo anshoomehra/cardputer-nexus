@@ -501,6 +501,25 @@ def main():
     # IC come fully online on a cold power-on. A freshly-instantiated
     # MatrixKeyboard after that delay works correctly.
     time.sleep_ms(800)
+    # Pulse all keyboard matrix column GPIOs before constructing
+    # MatrixKeyboard. The matrix scanner doesn't properly detect keys
+    # on columns that haven't seen electrical activity since boot.
+    # Up/down arrow keys (';' and '.') sit on a column that stays
+    # dormant until a key on another column is pressed. Pulsing all
+    # column GPIOs low then releasing them primes the scan hardware.
+    import machine as _mach
+    for pin_num in (13, 15, 3, 4, 5, 6, 7):
+        try:
+            p = _mach.Pin(pin_num, _mach.Pin.OUT)
+            p.value(0)
+            time.sleep_ms(2)
+            p.value(1)
+            time.sleep_ms(2)
+            # Release pin back to input so MatrixKeyboard can use it
+            _mach.Pin(pin_num, _mach.Pin.IN)
+        except:
+            pass
+    time.sleep_ms(50)
     kb = MatrixKeyboard()
     # Additional 400 ms debounce of the key used to land here (Enter
     # from the previous app's reset chain, or the initial power-on
