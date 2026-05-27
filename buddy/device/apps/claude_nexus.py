@@ -159,7 +159,7 @@ def _draw_main():
 
     _LCD.fillRect(0, _H - 18, _W, 18, _DARK)
     _LCD.setTextColor(_GRAY, _DARK)
-    _LCD.drawString("T txt V/M mic P pet Q quit", 35, _H - 14)
+    _LCD.drawString("T txt V voice P pet Q quit", 30, _H - 14)
 
     _idle_alert_sent = False
 
@@ -302,7 +302,7 @@ def _draw_idle_alert():
 
     _LCD.fillRect(0, _H - 18, _W, 18, _DARK)
     _LCD.setTextColor(_GRAY, _DARK)
-    _LCD.drawString("T txt V/M mic P pet Q quit", 35, _H - 14)
+    _LCD.drawString("T txt V voice P pet Q quit", 30, _H - 14)
 
     _beep_idle()
 
@@ -372,59 +372,6 @@ def _send(msg):
         except:
             pass
     return False
-
-def _record_device_mic():
-    """Record from Cardputer's mic to flash, then stream over BLE."""
-    if not _connected or not _conn_handle or not _tx_handle:
-        return False
-    try:
-        gc.collect()
-        mic = M5.Mic
-        mic.begin()
-
-        # Record 3 seconds at 16kHz directly to flash (Whisper needs 16kHz)
-        wav_path = '/flash/_voice.wav'
-        mic.recordWavFile(wav_path, 16000, True, 3)
-        mic.end()
-
-        # Get file size
-        import os
-        fsize = os.stat(wav_path)[6]
-
-        # Send audio_start
-        _send({"type": "audio_start", "mode": "claude_code", "size": fsize})
-        time.sleep_ms(100)
-
-        # Stream file over BLE in chunks
-        chunk = 240
-        with open(wav_path, 'rb') as f:
-            while True:
-                data = f.read(chunk)
-                if not data:
-                    break
-                if _connected and _conn_handle and _tx_handle:
-                    _ble.gatts_notify(_conn_handle, _tx_handle, data)
-                    time.sleep_ms(40)
-
-        time.sleep_ms(100)
-        _send({"type": "audio_end"})
-
-        # Clean up temp file
-        try:
-            os.remove(wav_path)
-        except:
-            pass
-        gc.collect()
-        return True
-    except Exception as e:
-        gc.collect()
-        try:
-            mic.end()
-        except:
-            pass
-        _LCD.setTextColor(_RED, _BLACK)
-        _LCD.drawString(str(e)[:35], 5, 110)
-        return False
 
 def _get_text(kb):
     text = ""
@@ -595,24 +542,6 @@ def run():
                         _draw_voice("listening")
                         _send({"type": "voice_request", "mode": "claude_code"})
                         state = "voice"
-                        last_redraw = now
-
-                if k in ('m', 'M', 0x6D, 0x4D):
-                    _last_activity = now
-                    if _idle_alert_sent:
-                        _idle_alert_sent = False
-                        _draw_main()
-                        last_redraw = now
-                    else:
-                        # M = device mic recording
-                        _draw_voice("recording")
-                        ok = _record_device_mic()
-                        if ok:
-                            _draw_voice("processing")
-                            state = "voice"
-                        else:
-                            # Error details shown by _record_device_mic
-                            state = "sent"
                         last_redraw = now
 
             elif state == "voice":
