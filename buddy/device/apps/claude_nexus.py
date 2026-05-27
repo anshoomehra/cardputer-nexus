@@ -382,9 +382,9 @@ def _record_device_mic():
         mic = M5.Mic
         mic.begin()
 
-        # Record 3 seconds at 8kHz directly to flash (no RAM needed!)
+        # Record 3 seconds at 16kHz directly to flash (Whisper needs 16kHz)
         wav_path = '/flash/_voice.wav'
-        mic.recordWavFile(wav_path, 8000, True, 3)
+        mic.recordWavFile(wav_path, 16000, True, 3)
         mic.end()
 
         # Get file size
@@ -395,8 +395,8 @@ def _record_device_mic():
         _send({"type": "audio_start", "mode": "claude_code", "size": fsize})
         time.sleep_ms(100)
 
-        # Stream file over BLE in small chunks
-        chunk = 200
+        # Stream file over BLE in chunks
+        chunk = 240
         with open(wav_path, 'rb') as f:
             while True:
                 data = f.read(chunk)
@@ -404,7 +404,7 @@ def _record_device_mic():
                     break
                 if _connected and _conn_handle and _tx_handle:
                     _ble.gatts_notify(_conn_handle, _tx_handle, data)
-                    time.sleep_ms(50)
+                    time.sleep_ms(40)
 
         time.sleep_ms(100)
         _send({"type": "audio_end"})
